@@ -1,4 +1,4 @@
-module gitee.com/bxsec/gotool
+module github.com/bxsec/gotool
 
 go 1.16
 
