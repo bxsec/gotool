@@ -1,4 +1,4 @@
-package msp
+package util
 
 import (
 	"fmt"
@@ -13,5 +13,3 @@ func GetUID() string {
 	f1 := fmt.Sprintf("%s", u1)
 	return f1
 }
-
-

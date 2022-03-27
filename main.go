@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/bxsec/gotool/msp"
+	"github.com/bxsec/gotool/util"
 )
 
 func main() {
-	msp.GetUID()
-	fmt.Println("")
+	uid := util.GetUID()
+	fmt.Println("uid:", uid)
 }
 
