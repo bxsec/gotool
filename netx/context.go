@@ -1,4 +1,4 @@
-package server
+package netx
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ type Context struct {
 	writeCh chan *[]byte
 }
 
-// NewContext creates a server.Context for Handler.
+// NewContext creates a netx.Context for Handler.
 func NewContext(ctx *share.Context, conn net.Conn, req *protocol.Message, writeCh chan *[]byte) *Context {
 	return &Context{conn: conn, req: req, ctx: ctx, writeCh: writeCh}
 }

@@ -7,6 +7,7 @@ require (
 	github.com/apache/thrift v0.16.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/fatih/color v1.13.0
+	github.com/gofiber/websocket/v2 v2.0.19
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
@@ -16,6 +17,7 @@ require (
 	github.com/juju/ratelimit v1.0.1
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/kavu/go_reuseport v1.5.0
+	github.com/panjf2000/gnet v1.6.4 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/rpcxio/libkv v0.5.1-0.20210420120011-1fceaedca8a5
 	github.com/rs/cors v1.8.2
@@ -30,6 +32,9 @@ require (
 	github.com/xtaci/kcp-go v5.4.20+incompatible
 	go.opentelemetry.io/otel v1.6.0
 	go.opentelemetry.io/otel/trace v1.6.0
-	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f
+	go.uber.org/multierr v1.8.0 // indirect
+	go.uber.org/zap v1.21.0 // indirect
+	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
+	golang.org/x/sys v0.0.0-20220325203850-36772127a21f // indirect
 	google.golang.org/protobuf v1.28.0
 )

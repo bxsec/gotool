@@ -1,7 +1,7 @@
 package serverplugin
 
 import (
-	"github.com/bxsec/gotool/server"
+	"github.com/bxsec/gotool/netx"
 	"testing"
 	"time"
 
@@ -10,7 +10,7 @@ import (
 )
 
 func TestZookeeperRegistry(t *testing.T) {
-	s := server.NewServer()
+	s := netx.NewServer()
 
 	r := &ZooKeeperRegisterPlugin{
 		ServiceAddress:   "tcp@127.0.0.1:8972",

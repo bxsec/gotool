@@ -1,6 +1,6 @@
 // +build !windows
 
-package server
+package netx
 
 import (
 	"net"

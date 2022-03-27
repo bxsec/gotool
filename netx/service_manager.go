@@ -1,63 +1,21 @@
-package server
+package netx
 
 import (
-	"context"
-	"errors"
 	"fmt"
+	"github.com/bxsec/gotool/log"
+	rerrors "github.com/smallnest/rpcx/errors"
+	"errors"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync"
-	"unicode"
-	"unicode/utf8"
-
-	rerrors "github.com/smallnest/rpcx/errors"
-	"github.com/smallnest/rpcx/log"
 )
 
-// Precompute the reflect type for error. Can't use error directly
-// because Typeof takes an empty interface value. This is annoying.
-var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
-
-// Precompute the reflect type for context.
-var typeOfContext = reflect.TypeOf((*context.Context)(nil)).Elem()
-
-type methodType struct {
-	sync.Mutex // protects counters
-	method     reflect.Method
-	ArgType    reflect.Type
-	ReplyType  reflect.Type
-	// numCalls   uint
+type ServiceManager struct {
+	serviceMapMu sync.RWMutex
+	serviceMap   map[string]*service
 }
 
-type functionType struct {
-	sync.Mutex // protects counters
-	fn         reflect.Value
-	ArgType    reflect.Type
-	ReplyType  reflect.Type
-}
-
-type service struct {
-	name     string                   // name of service
-	rcvr     reflect.Value            // receiver of methods for the service
-	typ      reflect.Type             // type of the receiver
-	method   map[string]*methodType   // registered methods
-	function map[string]*functionType // registered functions
-}
-
-func isExported(name string) bool {
-	rune, _ := utf8.DecodeRuneInString(name)
-	return unicode.IsUpper(rune)
-}
-
-func isExportedOrBuiltinType(t reflect.Type) bool {
-	for t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	// PkgPath will be non-empty even for an exported type,
-	// so we need to check the type name as well.
-	return isExported(t.Name()) || t.PkgPath() == ""
-}
 
 // Register publishes in the server the set of methods of the
 // receiver value that satisfy the following conditions:
@@ -69,25 +27,25 @@ func isExportedOrBuiltinType(t reflect.Type) bool {
 // no suitable methods. It also logs the error.
 // The client accesses each method using a string of the form "Type.Method",
 // where Type is the receiver's concrete type.
-func (s *Server) Register(rcvr interface{}, metadata string) error {
-	sname, err := s.register(rcvr, "", false)
+func (sm *ServiceManager) Register(rcvr interface{}, metadata string) error {
+	sname, err := sm.register(rcvr, "", false)
 	if err != nil {
 		return err
 	}
-	return s.Plugins.DoRegister(sname, rcvr, metadata)
+	return sm.Plugins.DoRegister(sname, rcvr, metadata)
 }
 
 // RegisterName is like Register but uses the provided name for the type
 // instead of the receiver's concrete type.
-func (s *Server) RegisterName(name string, rcvr interface{}, metadata string) error {
-	_, err := s.register(rcvr, name, true)
+func (sm *ServiceManager) RegisterName(name string, rcvr interface{}, metadata string) error {
+	_, err := sm.register(rcvr, name, true)
 	if err != nil {
 		return err
 	}
-	if s.Plugins == nil {
-		s.Plugins = &pluginContainer{}
+	if sm.Plugins == nil {
+		sm.Plugins = &pluginContainer{}
 	}
-	return s.Plugins.DoRegister(name, rcvr, metadata)
+	return sm.Plugins.DoRegister(name, rcvr, metadata)
 }
 
 // RegisterFunction publishes a function that satisfy the following conditions:
@@ -95,29 +53,29 @@ func (s *Server) RegisterName(name string, rcvr interface{}, metadata string) er
 //	- the third argument is a pointer
 //	- one return value, of type error
 // The client accesses function using a string of the form "servicePath.Method".
-func (s *Server) RegisterFunction(servicePath string, fn interface{}, metadata string) error {
-	fname, err := s.registerFunction(servicePath, fn, "", false)
+func (sm *ServiceManager) RegisterFunction(servicePath string, fn interface{}, metadata string) error {
+	fname, err := sm.registerFunction(servicePath, fn, "", false)
 	if err != nil {
 		return err
 	}
 
-	return s.Plugins.DoRegisterFunction(servicePath, fname, fn, metadata)
+	return sm.Plugins.DoRegisterFunction(servicePath, fname, fn, metadata)
 }
 
 // RegisterFunctionName is like RegisterFunction but uses the provided name for the function
 // instead of the function's concrete type.
-func (s *Server) RegisterFunctionName(servicePath string, name string, fn interface{}, metadata string) error {
-	_, err := s.registerFunction(servicePath, fn, name, true)
+func (sm *ServiceManager) RegisterFunctionName(servicePath string, name string, fn interface{}, metadata string) error {
+	_, err := sm.registerFunction(servicePath, fn, name, true)
 	if err != nil {
 		return err
 	}
 
-	return s.Plugins.DoRegisterFunction(servicePath, name, fn, metadata)
+	return sm.Plugins.DoRegisterFunction(servicePath, name, fn, metadata)
 }
 
-func (s *Server) register(rcvr interface{}, name string, useName bool) (string, error) {
-	s.serviceMapMu.Lock()
-	defer s.serviceMapMu.Unlock()
+func (sm *ServiceManager) register(rcvr interface{}, name string, useName bool) (string, error) {
+	sm.serviceMapMu.Lock()
+	defer sm.serviceMapMu.Unlock()
 
 	service := new(service)
 	service.typ = reflect.TypeOf(rcvr)
@@ -158,11 +116,11 @@ func (s *Server) register(rcvr interface{}, name string, useName bool) (string, 
 	return sname, nil
 }
 
-func (s *Server) registerFunction(servicePath string, fn interface{}, name string, useName bool) (string, error) {
-	s.serviceMapMu.Lock()
-	defer s.serviceMapMu.Unlock()
+func (sm *ServiceManager) registerFunction(servicePath string, fn interface{}, name string, useName bool) (string, error) {
+	sm.serviceMapMu.Lock()
+	defer sm.serviceMapMu.Unlock()
 
-	ss := s.serviceMap[servicePath]
+	ss := sm.serviceMap[servicePath]
 	if ss == nil {
 		ss = new(service)
 		ss.name = servicePath
@@ -312,12 +270,12 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 
 // UnregisterAll unregisters all services.
 // You can call this method when you want to shutdown/upgrade this node.
-func (s *Server) UnregisterAll() error {
-	s.serviceMapMu.RLock()
-	defer s.serviceMapMu.RUnlock()
+func (sm *ServiceManager) UnregisterAll() error {
+	sm.serviceMapMu.RLock()
+	defer sm.serviceMapMu.RUnlock()
 	var es []error
-	for k := range s.serviceMap {
-		err := s.Plugins.DoUnregister(k)
+	for k := range sm.serviceMap {
+		err := sm.Plugins.DoUnregister(k)
 		if err != nil {
 			es = append(es, err)
 		}
@@ -326,55 +284,5 @@ func (s *Server) UnregisterAll() error {
 	if len(es) > 0 {
 		return rerrors.NewMultiError(es)
 	}
-	return nil
-}
-
-func (s *service) call(ctx context.Context, mtype *methodType, argv, replyv reflect.Value) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			buf := make([]byte, 4096)
-			n := runtime.Stack(buf, false)
-			buf = buf[:n]
-
-			err = fmt.Errorf("[service internal error]: %v, method: %s, argv: %+v, stack: %s",
-				r, mtype.method.Name, argv.Interface(), buf)
-			log.Error(err)
-		}
-	}()
-
-	function := mtype.method.Func
-	// Invoke the method, providing a new value for the reply.
-	returnValues := function.Call([]reflect.Value{s.rcvr, reflect.ValueOf(ctx), argv, replyv})
-	// The return value for the method is an error.
-	errInter := returnValues[0].Interface()
-	if errInter != nil {
-		return errInter.(error)
-	}
-
-	return nil
-}
-
-func (s *service) callForFunction(ctx context.Context, ft *functionType, argv, replyv reflect.Value) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			buf := make([]byte, 4096)
-			n := runtime.Stack(buf, false)
-			buf = buf[:n]
-
-			// log.Errorf("failed to invoke service: %v, stacks: %s", r, string(debug.Stack()))
-			err = fmt.Errorf("[service internal error]: %v, function: %s, argv: %+v, stack: %s",
-				r, runtime.FuncForPC(ft.fn.Pointer()), argv.Interface(), buf)
-			log.Error(err)
-		}
-	}()
-
-	// Invoke the function, providing a new value for the reply.
-	returnValues := ft.fn.Call([]reflect.Value{reflect.ValueOf(ctx), argv, replyv})
-	// The return value for the method is an error.
-	errInter := returnValues[0].Interface()
-	if errInter != nil {
-		return errInter.(error)
-	}
-
 	return nil
 }

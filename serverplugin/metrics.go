@@ -3,7 +3,7 @@ package serverplugin
 import (
 	"context"
 	"github.com/bxsec/gotool/protocol"
-	"github.com/bxsec/gotool/server"
+	"github.com/bxsec/gotool/netx"
 	"net"
 	"time"
 
@@ -74,7 +74,7 @@ func (p *MetricsPlugin) PostWriteResponse(ctx context.Context, req *protocol.Mes
 	m := metrics.GetOrRegisterMeter(p.withPrefix("service."+sp+"."+sm+".Write_Qps"), p.Registry)
 	m.Mark(1)
 
-	t := ctx.Value(server.StartRequestContextKey).(int64)
+	t := ctx.Value(netx.StartRequestContextKey).(int64)
 
 	if t > 0 {
 		t = time.Now().UnixNano() - t

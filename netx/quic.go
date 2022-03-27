@@ -1,6 +1,6 @@
 // +build quic
 
-package server
+package netx
 
 import (
 	"errors"

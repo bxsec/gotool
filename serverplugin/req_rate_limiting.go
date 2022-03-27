@@ -2,7 +2,7 @@ package serverplugin
 
 import (
 	"context"
-	"github.com/bxsec/gotool/server"
+	"github.com/bxsec/gotool/netx"
 	"time"
 
 	"github.com/juju/ratelimit"
@@ -39,5 +39,5 @@ func (plugin *ReqRateLimitingPlugin) PreReadRequest(ctx context.Context) error {
 	if count == 1 {
 		return nil
 	}
-	return server.ErrReqReachLimit
+	return netx.ErrReqReachLimit
 }

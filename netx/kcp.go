@@ -1,6 +1,6 @@
 // +build kcp
 
-package server
+package netx
 
 import (
 	"errors"
