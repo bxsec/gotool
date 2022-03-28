@@ -9,7 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/smallnest/rpcx/log"
+	"github.com/bxsec/gotool/log"
 )
 
 // Precompute the reflect type for error. Can't use error directly
@@ -34,10 +34,7 @@ type functionType struct {
 	ReplyType  reflect.Type
 }
 
-
-
-
-type service struct {
+type Service struct {
 	name     string                   // name of service
 	rcvr     reflect.Value            // receiver of methods for the service
 	typ      reflect.Type             // type of the receiver
@@ -59,9 +56,7 @@ func isExportedOrBuiltinType(t reflect.Type) bool {
 	return isExported(t.Name()) || t.PkgPath() == ""
 }
 
-
-
-func (s *service) call(ctx context.Context, mtype *methodType, argv, replyv reflect.Value) (err error) {
+func (s *Service) Call(ctx context.Context, mtype *methodType, argv, replyv reflect.Value) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			buf := make([]byte, 4096)
@@ -86,7 +81,7 @@ func (s *service) call(ctx context.Context, mtype *methodType, argv, replyv refl
 	return nil
 }
 
-func (s *service) callForFunction(ctx context.Context, ft *functionType, argv, replyv reflect.Value) (err error) {
+func (s *Service) CallForFunction(ctx context.Context, ft *functionType, argv, replyv reflect.Value) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			buf := make([]byte, 4096)

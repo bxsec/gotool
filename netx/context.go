@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/smallnest/rpcx/protocol"
-	"github.com/smallnest/rpcx/share"
+	"github.com/bxsec/gotool/protocol"
+	"github.com/bxsec/gotool/share"
 )
 
 // Context represents a rpcx FastCall context.
@@ -37,12 +37,11 @@ func (ctx *Context) SetValue(key, val interface{}) {
 
 // DeleteKey delete the kv pair by key.
 func (ctx *Context) DeleteKey(key interface{}) {
-	if ctx.ctx==nil || key == nil{
+	if ctx.ctx == nil || key == nil {
 		return
 	}
 	ctx.ctx.DeleteKey(key)
 }
-
 
 // Payload returns the  payload.
 func (ctx *Context) Payload() []byte {

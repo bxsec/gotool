@@ -1,8 +1,9 @@
-package codec
+package serialize
 
 import (
-	"github.com/bxsec/gotool/codec/testdata"
 	"testing"
+
+	"github.com/bxsec/gotool/codec/testdata"
 )
 
 type ColorGroup struct {

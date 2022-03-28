@@ -1,21 +1,21 @@
 package netx
 
 import (
-	"fmt"
-	"github.com/bxsec/gotool/log"
-	rerrors "github.com/smallnest/rpcx/errors"
 	"errors"
+	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/bxsec/gotool/log"
+	rerrors "github.com/smallnest/rpcx/errors"
 )
 
 type ServiceManager struct {
 	serviceMapMu sync.RWMutex
-	serviceMap   map[string]*service
+	serviceMap   map[string]*Service
 }
-
 
 // Register publishes in the server the set of methods of the
 // receiver value that satisfy the following conditions:
@@ -77,7 +77,7 @@ func (sm *ServiceManager) register(rcvr interface{}, name string, useName bool) 
 	sm.serviceMapMu.Lock()
 	defer sm.serviceMapMu.Unlock()
 
-	service := new(service)
+	service := new(Service)
 	service.typ = reflect.TypeOf(rcvr)
 	service.rcvr = reflect.ValueOf(rcvr)
 	sname := reflect.Indirect(service.rcvr).Type().Name() // Type
@@ -112,7 +112,7 @@ func (sm *ServiceManager) register(rcvr interface{}, name string, useName bool) 
 		log.Error(errorStr)
 		return sname, errors.New(errorStr)
 	}
-	s.serviceMap[service.name] = service
+	sm.serviceMap[service.name] = service
 	return sname, nil
 }
 
@@ -122,7 +122,7 @@ func (sm *ServiceManager) registerFunction(servicePath string, fn interface{}, n
 
 	ss := sm.serviceMap[servicePath]
 	if ss == nil {
-		ss = new(service)
+		ss = new(Service)
 		ss.name = servicePath
 		ss.function = make(map[string]*functionType)
 	}
@@ -185,7 +185,7 @@ func (sm *ServiceManager) registerFunction(servicePath string, fn interface{}, n
 
 	// Install the methods
 	ss.function[fname] = &functionType{fn: f, ArgType: argType, ReplyType: replyType}
-	s.serviceMap[servicePath] = ss
+	sm.serviceMap[servicePath] = ss
 
 	// init pool for reflect.Type of args and reply
 	reflectTypePools.Init(argType)

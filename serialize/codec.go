@@ -1,4 +1,4 @@
-package codec
+package serialize
 
 import (
 	"bytes"
@@ -9,23 +9,23 @@ import (
 	"reflect"
 
 	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/tinylib/msgp/msgp"
 	proto "github.com/gogo/protobuf/proto"
+	"github.com/tinylib/msgp/msgp"
 	"github.com/vmihailenco/msgpack/v5"
 	pb "google.golang.org/protobuf/proto"
 )
 
 // Codec defines the interface that decode/encode payload.
-type Codec interface {
+type Serialize interface {
 	Encode(i interface{}) ([]byte, error)
 	Decode(data []byte, i interface{}) error
 }
 
 // ByteCodec uses raw slice pf bytes and don't encode/decode.
-type ByteCodec struct{}
+type ByteSerialize struct{}
 
 // Encode returns raw slice of bytes.
-func (c ByteCodec) Encode(i interface{}) ([]byte, error) {
+func (c ByteSerialize) Encode(i interface{}) ([]byte, error) {
 	if data, ok := i.([]byte); ok {
 		return data, nil
 	}
@@ -37,31 +37,31 @@ func (c ByteCodec) Encode(i interface{}) ([]byte, error) {
 }
 
 // Decode returns raw slice of bytes.
-func (c ByteCodec) Decode(data []byte, i interface{}) error {
+func (c ByteSerialize) Decode(data []byte, i interface{}) error {
 	reflect.Indirect(reflect.ValueOf(i)).SetBytes(data)
 	return nil
 }
 
 // JSONCodec uses json marshaler and unmarshaler.
-type JSONCodec struct{}
+type JSONSerialize struct{}
 
 // Encode encodes an object into slice of bytes.
-func (c JSONCodec) Encode(i interface{}) ([]byte, error) {
+func (c JSONSerialize) Encode(i interface{}) ([]byte, error) {
 	return json.Marshal(i)
 }
 
 // Decode decodes an object from slice of bytes.
-func (c JSONCodec) Decode(data []byte, i interface{}) error {
+func (c JSONSerialize) Decode(data []byte, i interface{}) error {
 	d := json.NewDecoder(bytes.NewBuffer(data))
 	d.UseNumber()
 	return d.Decode(i)
 }
 
 // PBCodec uses protobuf marshaler and unmarshaler.
-type PBCodec struct{}
+type PBSerialize struct{}
 
 // Encode encodes an object into slice of bytes.
-func (c PBCodec) Encode(i interface{}) ([]byte, error) {
+func (c PBSerialize) Encode(i interface{}) ([]byte, error) {
 	if m, ok := i.(proto.Marshaler); ok {
 		return m.Marshal()
 	}
@@ -74,7 +74,7 @@ func (c PBCodec) Encode(i interface{}) ([]byte, error) {
 }
 
 // Decode decodes an object from slice of bytes.
-func (c PBCodec) Decode(data []byte, i interface{}) error {
+func (c PBSerialize) Decode(data []byte, i interface{}) error {
 	if m, ok := i.(proto.Unmarshaler); ok {
 		return m.Unmarshal(data)
 	}
@@ -87,10 +87,10 @@ func (c PBCodec) Decode(data []byte, i interface{}) error {
 }
 
 // MsgpackCodec uses messagepack marshaler and unmarshaler.
-type MsgpackCodec struct{}
+type MsgpackSerialize struct{}
 
 // Encode encodes an object into slice of bytes.
-func (c MsgpackCodec) Encode(i interface{}) ([]byte, error) {
+func (c MsgpackSerialize) Encode(i interface{}) ([]byte, error) {
 	if m, ok := i.(msgp.Marshaler); ok {
 		return m.MarshalMsg(nil)
 	}
@@ -102,7 +102,7 @@ func (c MsgpackCodec) Encode(i interface{}) ([]byte, error) {
 }
 
 // Decode decodes an object from slice of bytes.
-func (c MsgpackCodec) Decode(data []byte, i interface{}) error {
+func (c MsgpackSerialize) Decode(data []byte, i interface{}) error {
 	if m, ok := i.(msgp.Unmarshaler); ok {
 		_, err := m.UnmarshalMsg(data)
 		return err
@@ -113,9 +113,9 @@ func (c MsgpackCodec) Decode(data []byte, i interface{}) error {
 	return err
 }
 
-type ThriftCodec struct{}
+type ThriftSerialize struct{}
 
-func (c ThriftCodec) Encode(i interface{}) ([]byte, error) {
+func (c ThriftSerialize) Encode(i interface{}) ([]byte, error) {
 	b := thrift.NewTMemoryBufferLen(1024)
 	p := thrift.NewTBinaryProtocolFactoryDefault().GetProtocol(b)
 	t := &thrift.TSerializer{
@@ -129,7 +129,7 @@ func (c ThriftCodec) Encode(i interface{}) ([]byte, error) {
 	return nil, errors.New("type assertion failed")
 }
 
-func (c ThriftCodec) Decode(data []byte, i interface{}) error {
+func (c ThriftSerialize) Decode(data []byte, i interface{}) error {
 	t := thrift.NewTMemoryBufferLen(1024)
 	p := thrift.NewTBinaryProtocolFactoryDefault().GetProtocol(t)
 	d := &thrift.TDeserializer{

@@ -5,11 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/bxsec/gotool/log"
-	"github.com/bxsec/gotool/netx/connect"
-	"github.com/bxsec/gotool/protocol"
-	"github.com/bxsec/gotool/share"
-	"github.com/panjf2000/gnet"
 	"io"
 	"net"
 	"os"
@@ -21,6 +16,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/bxsec/gotool/log"
+	"github.com/bxsec/gotool/netx/connect"
+	"github.com/bxsec/gotool/protocol"
+	"github.com/bxsec/gotool/share"
+	"github.com/panjf2000/gnet"
 )
 
 // ErrServerClosed is returned by the Server's Serve, ListenAndServe after a call to Shutdown or Close.
@@ -67,19 +68,17 @@ type Handler func(ctx *Context) error
 // Server is rpcx server that use TCP or UDP.
 type Server struct {
 	//ln                 net.Listener
-	readTimeout        time.Duration
-	writeTimeout       time.Duration
+	readTimeout  time.Duration
+	writeTimeout time.Duration
 	//gatewayHTTPServer  *http.Server
 	//DisableHTTPGateway bool // should disable http invoke or not.
 	//DisableJSONRPC     bool // should disable json rpc or not.
-	AsyncWrite         bool // set true if your server only serves few clients
-
-
+	AsyncWrite bool // set true if your server only serves few clients
 
 	router map[string]Handler
 
 	mu         sync.RWMutex
-	activeConn map[net.Conn]struct{}
+	activeConn map[connect.IConnect]struct{}
 	doneChan   chan struct{}
 	seq        uint64
 
@@ -142,10 +141,10 @@ func (s *Server) AddHandler(servicePath, serviceMethod string, handler func(*Con
 }
 
 // ActiveClientConn returns active connections.
-func (s *Server) ActiveClientConn() []net.Conn {
+func (s *Server) ActiveClientConn() []connect.IConnect {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]net.Conn, 0, len(s.activeConn))
+	result := make([]connect.IConnect, 0, len(s.activeConn))
 	for clientConn := range s.activeConn {
 		result = append(result, clientConn)
 	}
@@ -459,7 +458,6 @@ func (s *Server) React(c gnet.Conn, frame []byte) (out []byte, action gnet.Actio
 func (s *Server) OnDisconnect(c connect.IConnect) {
 
 }
-
 
 // Close immediately closes all active net.Listeners.
 func (s *Server) Close() error {
