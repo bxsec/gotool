@@ -5,6 +5,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	errors2 "github.com/bxsec/gotool/errors"
+	"github.com/bxsec/gotool/pool"
+	method_service "github.com/bxsec/gotool/service"
 	"io"
 	"net"
 	"os"
@@ -79,6 +82,9 @@ type Server struct {
 
 	mu         sync.RWMutex
 	activeConn map[connect.IConnect]struct{}
+
+	serviceManager *method_service.ServiceManager
+
 	doneChan   chan struct{}
 	seq        uint64
 
@@ -109,9 +115,9 @@ func NewServer(options ...OptionFn) *Server {
 	s := &Server{
 		Plugins:    &pluginContainer{},
 		options:    make(map[string]interface{}),
-		activeConn: make(map[net.Conn]struct{}),
+		activeConn: make(map[connect.IConnect]struct{}),
 		doneChan:   make(chan struct{}),
-		serviceMap: make(map[string]*service),
+		serviceManager: method_service.NewServiceManager(),
 		router:     make(map[string]Handler),
 		AsyncWrite: false, // 除非你想benchmark或者极致优化，否则建议你设置为false
 	}
@@ -286,17 +292,17 @@ func (s *Server) handleRequest(ctx context.Context, req *protocol.Message) (res 
 	res = req.Clone()
 
 	res.SetMessageType(protocol.Response)
-	s.serviceMapMu.RLock()
-	service := s.serviceMap[serviceName]
-
-	if share.Trace {
-		log.Debugf("server get service %+v for an request %+v", service, req)
-	}
-
-	s.serviceMapMu.RUnlock()
+	service, ret, err := s.serviceManager.ServiceMethod(serviceName, methodName)
 	if service == nil {
 		err = errors.New("rpcx: can't find service " + serviceName)
 		return handleError(res, err)
+	}
+
+	if ret == method_service.MethodTypeNone {
+		err = errors.New("rpcx: can't find method " + methodName)
+		return handleError(res, err)
+	} else if ret == method_service.MethodTypeFunction {
+		return s.handleRequestForFunction(ctx, req)
 	}
 	mtype := service.method[methodName]
 	if mtype == nil {
@@ -310,24 +316,24 @@ func (s *Server) handleRequest(ctx context.Context, req *protocol.Message) (res 
 	// get a argv object from object pool
 	argv := reflectTypePools.Get(mtype.ArgType)
 
-	codec := share.Codecs[req.SerializeType()]
-	if codec == nil {
+	serializer := share.Serializes[req.SerializeType()]
+	if serializer == nil {
 		err = fmt.Errorf("can not find codec for %d", req.SerializeType())
 		return handleError(res, err)
 	}
 
-	err = codec.Decode(req.Payload, argv)
+	err = serializer.Decode(req.Payload, argv)
 	if err != nil {
 		return handleError(res, err)
 	}
 
 	// and get a reply object from object pool
-	replyv := reflectTypePools.Get(mtype.ReplyType)
+	replyv := pool.ReflectTypePools.Get(mtype.ReplyType)
 
 	argv, err = s.Plugins.DoPreCall(ctx, serviceName, methodName, argv)
 	if err != nil {
 		// return reply to object pool
-		reflectTypePools.Put(mtype.ReplyType, replyv)
+		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
 		return handleError(res, err)
 	}
 
@@ -342,13 +348,13 @@ func (s *Server) handleRequest(ctx context.Context, req *protocol.Message) (res 
 	}
 
 	// return argc to object pool
-	reflectTypePools.Put(mtype.ArgType, argv)
+	pool.ReflectTypePools.Put(mtype.ArgType, argv)
 
 	if err != nil {
 		if replyv != nil {
-			data, err := codec.Encode(replyv)
+			data, err := serializer.Encode(replyv)
 			// return reply to object pool
-			reflectTypePools.Put(mtype.ReplyType, replyv)
+			pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
 			if err != nil {
 				return handleError(res, err)
 			}
@@ -358,15 +364,15 @@ func (s *Server) handleRequest(ctx context.Context, req *protocol.Message) (res 
 	}
 
 	if !req.IsOneway() {
-		data, err := codec.Encode(replyv)
+		data, err := serializer.Encode(replyv)
 		// return reply to object pool
-		reflectTypePools.Put(mtype.ReplyType, replyv)
+		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
 		if err != nil {
 			return handleError(res, err)
 		}
 		res.Payload = data
 	} else if replyv != nil {
-		reflectTypePools.Put(mtype.ReplyType, replyv)
+		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
 	}
 
 	if share.Trace {
@@ -396,20 +402,20 @@ func (s *Server) handleRequestForFunction(ctx context.Context, req *protocol.Mes
 		return handleError(res, err)
 	}
 
-	argv := reflectTypePools.Get(mtype.ArgType)
+	argv := pool.ReflectTypePools.Get(mtype.ArgType)
 
-	codec := share.Codecs[req.SerializeType()]
-	if codec == nil {
+	serializer := share.Serializes[req.SerializeType()]
+	if serializer == nil {
 		err = fmt.Errorf("can not find codec for %d", req.SerializeType())
 		return handleError(res, err)
 	}
 
-	err = codec.Decode(req.Payload, argv)
+	err = serializer.Decode(req.Payload, argv)
 	if err != nil {
 		return handleError(res, err)
 	}
 
-	replyv := reflectTypePools.Get(mtype.ReplyType)
+	replyv := pool.ReflectTypePools.Get(mtype.ReplyType)
 
 	if mtype.ArgType.Kind() != reflect.Ptr {
 		err = service.callForFunction(ctx, mtype, reflect.ValueOf(argv).Elem(), reflect.ValueOf(replyv))
@@ -417,22 +423,22 @@ func (s *Server) handleRequestForFunction(ctx context.Context, req *protocol.Mes
 		err = service.callForFunction(ctx, mtype, reflect.ValueOf(argv), reflect.ValueOf(replyv))
 	}
 
-	reflectTypePools.Put(mtype.ArgType, argv)
+	pool.ReflectTypePools.Put(mtype.ArgType, argv)
 
 	if err != nil {
-		reflectTypePools.Put(mtype.ReplyType, replyv)
+		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
 		return handleError(res, err)
 	}
 
 	if !req.IsOneway() {
-		data, err := codec.Encode(replyv)
-		reflectTypePools.Put(mtype.ReplyType, replyv)
+		data, err := serializer.Encode(replyv)
+		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
 		if err != nil {
 			return handleError(res, err)
 		}
 		res.Payload = data
 	} else if replyv != nil {
-		reflectTypePools.Put(mtype.ReplyType, replyv)
+		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
 	}
 
 	return res, nil
@@ -458,6 +464,72 @@ func (s *Server) React(c gnet.Conn, frame []byte) (out []byte, action gnet.Actio
 func (s *Server) OnDisconnect(c connect.IConnect) {
 
 }
+
+
+func (s *Server) Register(rcvr interface{}, metadata string) error {
+	sname, err := s.serviceManager.Register(rcvr, "", false)
+	if err != nil {
+		return err
+	}
+	return s.Plugins.DoRegister(sname, rcvr, metadata)
+}
+
+// RegisterName is like Register but uses the provided name for the type
+// instead of the receiver's concrete type.
+func (s *Server) RegisterName(name string, rcvr interface{}, metadata string) error {
+	_, err := s.serviceManager.Register(rcvr, name, true)
+	if err != nil {
+		return err
+	}
+	if s.Plugins == nil {
+		s.Plugins = &pluginContainer{}
+	}
+	return s.Plugins.DoRegister(name, rcvr, metadata)
+}
+
+// RegisterFunction publishes a function that satisfy the following conditions:
+//	- three arguments, the first is of context.Context, both of exported type for three arguments
+//	- the third argument is a pointer
+//	- one return value, of type error
+// The client accesses function using a string of the form "servicePath.Method".
+func (s *Server) RegisterFunction(servicePath string, fn interface{}, metadata string) error {
+	fname, err := s.serviceManager.RegisterFunction(servicePath, fn, "", false)
+	if err != nil {
+		return err
+	}
+
+	return s.Plugins.DoRegisterFunction(servicePath, fname, fn, metadata)
+}
+
+// RegisterFunctionName is like RegisterFunction but uses the provided name for the function
+// instead of the function's concrete type.
+func (s *Server) RegisterFunctionName(servicePath string, name string, fn interface{}, metadata string) error {
+	_, err := s.serviceManager.RegisterFunction(servicePath, fn, name, true)
+	if err != nil {
+		return err
+	}
+
+	return s.Plugins.DoRegisterFunction(servicePath, name, fn, metadata)
+}
+
+func (s *Server) UnregisterAll() error {
+	serviceNameArr := s.serviceManager.UnregisterAll()
+
+	var es []error
+	for k := range serviceNameArr {
+		err := s.Plugins.DoUnregister(k)
+		if err != nil {
+			es = append(es, err)
+		}
+	}
+
+	if len(es) > 0 {
+		return errors2.NewMultiError (es)
+	}
+	return nil
+}
+
+
 
 // Close immediately closes all active net.Listeners.
 func (s *Server) Close() error {

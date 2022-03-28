@@ -1,79 +1,32 @@
-package netx
+package service
 
 import (
 	"errors"
 	"fmt"
+	"github.com/bxsec/gotool/pool"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync"
 
 	"github.com/bxsec/gotool/log"
-	rerrors "github.com/smallnest/rpcx/errors"
 )
+
+func NewServiceManager() *ServiceManager {
+	return &ServiceManager{
+		serviceMapMu: sync.RWMutex{},
+		serviceMap:   make(map[string]*Service),
+	}
+}
+
 
 type ServiceManager struct {
 	serviceMapMu sync.RWMutex
 	serviceMap   map[string]*Service
 }
 
-// Register publishes in the server the set of methods of the
-// receiver value that satisfy the following conditions:
-//	- exported method of exported type
-//	- three arguments, the first is of context.Context, both of exported type for three arguments
-//	- the third argument is a pointer
-//	- one return value, of type error
-// It returns an error if the receiver is not an exported type or has
-// no suitable methods. It also logs the error.
-// The client accesses each method using a string of the form "Type.Method",
-// where Type is the receiver's concrete type.
-func (sm *ServiceManager) Register(rcvr interface{}, metadata string) error {
-	sname, err := sm.register(rcvr, "", false)
-	if err != nil {
-		return err
-	}
-	return sm.Plugins.DoRegister(sname, rcvr, metadata)
-}
 
-// RegisterName is like Register but uses the provided name for the type
-// instead of the receiver's concrete type.
-func (sm *ServiceManager) RegisterName(name string, rcvr interface{}, metadata string) error {
-	_, err := sm.register(rcvr, name, true)
-	if err != nil {
-		return err
-	}
-	if sm.Plugins == nil {
-		sm.Plugins = &pluginContainer{}
-	}
-	return sm.Plugins.DoRegister(name, rcvr, metadata)
-}
-
-// RegisterFunction publishes a function that satisfy the following conditions:
-//	- three arguments, the first is of context.Context, both of exported type for three arguments
-//	- the third argument is a pointer
-//	- one return value, of type error
-// The client accesses function using a string of the form "servicePath.Method".
-func (sm *ServiceManager) RegisterFunction(servicePath string, fn interface{}, metadata string) error {
-	fname, err := sm.registerFunction(servicePath, fn, "", false)
-	if err != nil {
-		return err
-	}
-
-	return sm.Plugins.DoRegisterFunction(servicePath, fname, fn, metadata)
-}
-
-// RegisterFunctionName is like RegisterFunction but uses the provided name for the function
-// instead of the function's concrete type.
-func (sm *ServiceManager) RegisterFunctionName(servicePath string, name string, fn interface{}, metadata string) error {
-	_, err := sm.registerFunction(servicePath, fn, name, true)
-	if err != nil {
-		return err
-	}
-
-	return sm.Plugins.DoRegisterFunction(servicePath, name, fn, metadata)
-}
-
-func (sm *ServiceManager) register(rcvr interface{}, name string, useName bool) (string, error) {
+func (sm *ServiceManager) Register(rcvr interface{}, name string, useName bool) (string, error) {
 	sm.serviceMapMu.Lock()
 	defer sm.serviceMapMu.Unlock()
 
@@ -116,7 +69,7 @@ func (sm *ServiceManager) register(rcvr interface{}, name string, useName bool) 
 	return sname, nil
 }
 
-func (sm *ServiceManager) registerFunction(servicePath string, fn interface{}, name string, useName bool) (string, error) {
+func (sm *ServiceManager) RegisterFunction(servicePath string, fn interface{}, name string, useName bool) (string, error) {
 	sm.serviceMapMu.Lock()
 	defer sm.serviceMapMu.Unlock()
 
@@ -124,7 +77,7 @@ func (sm *ServiceManager) registerFunction(servicePath string, fn interface{}, n
 	if ss == nil {
 		ss = new(Service)
 		ss.name = servicePath
-		ss.function = make(map[string]*functionType)
+		ss.method = make(map[string]MethodType)
 	}
 
 	f, ok := fn.(reflect.Value)
@@ -184,20 +137,27 @@ func (sm *ServiceManager) registerFunction(servicePath string, fn interface{}, n
 	}
 
 	// Install the methods
-	ss.function[fname] = &functionType{fn: f, ArgType: argType, ReplyType: replyType}
+	ss.method[fname] = &functionType {
+		methodBase: methodBase{
+			ArgType:   argType,
+			ReplyType: replyType,
+		},
+		fn:         f,
+	}
+
 	sm.serviceMap[servicePath] = ss
 
 	// init pool for reflect.Type of args and reply
-	reflectTypePools.Init(argType)
-	reflectTypePools.Init(replyType)
+	pool.ReflectTypePools.Init(argType)
+	pool.ReflectTypePools.Init(replyType)
 
 	return fname, nil
 }
 
 // suitableMethods returns suitable Rpc methods of typ, it will report
 // error using log if reportErr is true.
-func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
-	methods := make(map[string]*methodType)
+func suitableMethods(typ reflect.Type, reportErr bool) map[string]MethodType {
+	methods := make(map[string]MethodType)
 	for m := 0; m < typ.NumMethod(); m++ {
 		method := typ.Method(m)
 		mtype := method.Type
@@ -259,30 +219,54 @@ func suitableMethods(typ reflect.Type, reportErr bool) map[string]*methodType {
 			}
 			continue
 		}
-		methods[mname] = &methodType{method: method, ArgType: argType, ReplyType: replyType}
+
+		methods[mname] = &methodType{
+			methodBase: methodBase{
+				ArgType:   argType,
+				ReplyType: replyType,
+			},
+			method:     method,
+		}
 
 		// init pool for reflect.Type of args and reply
-		reflectTypePools.Init(argType)
-		reflectTypePools.Init(replyType)
+		pool.ReflectTypePools.Init(argType)
+		pool.ReflectTypePools.Init(replyType)
 	}
 	return methods
 }
 
 // UnregisterAll unregisters all services.
 // You can call this method when you want to shutdown/upgrade this node.
-func (sm *ServiceManager) UnregisterAll() error {
+func (sm *ServiceManager) UnregisterAll() []string {
 	sm.serviceMapMu.RLock()
 	defer sm.serviceMapMu.RUnlock()
-	var es []error
+	var es []string
 	for k := range sm.serviceMap {
-		err := sm.Plugins.DoUnregister(k)
-		if err != nil {
-			es = append(es, err)
-		}
+		es = append(es, k)
 	}
 
-	if len(es) > 0 {
-		return rerrors.NewMultiError(es)
+	return es
+}
+
+func (sm *ServiceManager) Service(serviceName string) (ret *Service) {
+	sm.serviceMapMu.RLock()
+	ret = sm.serviceMap[serviceName]
+	sm.serviceMapMu.RUnlock()
+	return
+}
+
+func (sm *ServiceManager) ServiceMethod(serviceName, method string) (*Service, MethodType, error) {
+	sm.serviceMapMu.RLock()
+	ret := sm.serviceMap[serviceName]
+	sm.serviceMapMu.RUnlock()
+
+	if ret == nil {
+		return ret,nil,errors.New("not found service")
 	}
-	return nil
+	mt := ret.method[method]
+	if mt == nil {
+		return ret,nil, errors.New("not found method or function")
+	}
+
+	return ret,mt,nil
 }

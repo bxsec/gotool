@@ -1,7 +1,7 @@
 package share
 
 import (
-	"github.com/bxsec/gotool/codec"
+	"github.com/bxsec/gotool/serialize"
 	"github.com/bxsec/gotool/protocol"
 )
 
@@ -31,17 +31,17 @@ const (
 var Trace bool
 
 // Codecs are codecs supported by rpcx. You can add customized codecs in Codecs.
-var Codecs = map[protocol.SerializeType]codec.Codec{
-	protocol.SerializeNone: &codec.ByteCodec{},
-	protocol.JSON:          &codec.JSONCodec{},
-	protocol.ProtoBuffer:   &codec.PBCodec{},
-	protocol.MsgPack:       &codec.MsgpackCodec{},
-	protocol.Thrift:        &codec.ThriftCodec{},
+var Serializes = map[protocol.SerializeType]serialize.Serialize{
+	protocol.SerializeNone: &serialize.ByteSerialize{},
+	protocol.JSON:          &serialize.JSONSerialize{},
+	protocol.ProtoBuffer:   &serialize.PBSerialize{},
+	protocol.MsgPack:       &serialize.MsgpackSerialize{},
+	protocol.Thrift:        &serialize.ThriftSerialize{},
 }
 
 // RegisterCodec register customized codec.
-func RegisterCodec(t protocol.SerializeType, c codec.Codec) {
-	Codecs[t] = c
+func RegisterCodec(t protocol.SerializeType, c serialize.Serialize) {
+	Serializes[t] = c
 }
 
 // ContextKey defines key type in context.

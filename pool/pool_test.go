@@ -1,4 +1,4 @@
-package netx
+package pool
 
 import (
 	"reflect"
@@ -15,17 +15,17 @@ func TestPool(t *testing.T) {
 
 	intType := reflect.TypeOf(magicNumber)
 	// init int pool
-	reflectTypePools.Init(intType)
+	ReflectTypePools.Init(intType)
 	// insert a integer
-	reflectTypePools.Put(intType, magicNumber)
+	ReflectTypePools.Put(intType, magicNumber)
 	// if UsePool == false, argsReplyPools.Get() will call reflect.New() which
 	// returns a Value representing a pointer to a new zero value
-	assert.Equal(t, 0, *reflectTypePools.Get(intType).(*int))
+	assert.Equal(t, 0, *ReflectTypePools.Get(intType).(*int))
 
 	// start pooling
 	UsePool = true
 
-	reflectTypePools.Put(intType, magicNumber)
+	ReflectTypePools.Put(intType, magicNumber)
 	// Get() will remove element from pool
-	assert.Equal(t, magicNumber, reflectTypePools.Get(intType).(int))
+	assert.Equal(t, magicNumber, ReflectTypePools.Get(intType).(int))
 }
