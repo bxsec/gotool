@@ -67,7 +67,7 @@ func (ctx *Context) ServiceMethod() string {
 func (ctx *Context) Bind(v interface{}) error {
 	req := ctx.req
 	if v != nil {
-		codec := share.Codecs[req.SerializeType()]
+		codec := share.Serializes[req.SerializeType()]
 		if codec == nil {
 			return fmt.Errorf("can not find codec for %d", req.SerializeType())
 		}
@@ -87,7 +87,7 @@ func (ctx *Context) Write(v interface{}) error {
 		return nil
 	}
 
-	codec := share.Codecs[req.SerializeType()]
+	codec := share.Serializes[req.SerializeType()]
 	if codec == nil {
 		return fmt.Errorf("can not find codec for %d", req.SerializeType())
 	}
@@ -141,7 +141,7 @@ func (ctx *Context) WriteError(err error) error {
 		return nil
 	}
 
-	codec := share.Codecs[req.SerializeType()]
+	codec := share.Serializes[req.SerializeType()]
 	if codec == nil {
 		return fmt.Errorf("can not find codec for %d", req.SerializeType())
 	}

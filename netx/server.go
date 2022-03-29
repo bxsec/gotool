@@ -1,6 +1,7 @@
 package netx
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,14 +70,11 @@ var (
 
 type Handler func(ctx *Context) error
 
-// Server is rpcx server that use TCP or UDP.
-type Server struct {
+// XServer is rpcx server that use TCP or UDP.
+type XServer struct {
 	//ln                 net.Listener
 	readTimeout  time.Duration
 	writeTimeout time.Duration
-	//gatewayHTTPServer  *http.Server
-	//DisableHTTPGateway bool // should disable http invoke or not.
-	//DisableJSONRPC     bool // should disable json rpc or not.
 	AsyncWrite bool // set true if your server only serves few clients
 
 	router map[string]Handler
@@ -89,13 +88,15 @@ type Server struct {
 	seq        uint64
 
 	inShutdown int32
-	onShutdown []func(s *Server)
-	onRestart  []func(s *Server)
+	onShutdown []func(s *XServer)
+	onRestart  []func(s *XServer)
 
 	// TLSConfig for creating tls tcp connection.
 	tlsConfig *tls.Config
 	// BlockCrypt for kcp.BlockCrypt
 	options map[string]interface{}
+
+	tcpTransport INetTransport
 
 	// CORS options
 	//corsOptions *CORSOptions
@@ -111,8 +112,8 @@ type Server struct {
 }
 
 // NewServer returns a server.
-func NewServer(options ...OptionFn) *Server {
-	s := &Server{
+func NewServer(options ...OptionFn) *XServer {
+	s := &XServer{
 		Plugins:    &pluginContainer{},
 		options:    make(map[string]interface{}),
 		activeConn: make(map[connect.IConnect]struct{}),
@@ -133,7 +134,7 @@ func NewServer(options ...OptionFn) *Server {
 }
 
 // Address returns listened address.
-func (s *Server) Address() net.Addr {
+func (s *XServer) Address() net.Addr {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.ln == nil {
@@ -142,12 +143,12 @@ func (s *Server) Address() net.Addr {
 	return s.ln.Addr()
 }
 
-func (s *Server) AddHandler(servicePath, serviceMethod string, handler func(*Context) error) {
+func (s *XServer) AddHandler(servicePath, serviceMethod string, handler func(*Context) error) {
 	s.router[servicePath+"."+serviceMethod] = handler
 }
 
 // ActiveClientConn returns active connections.
-func (s *Server) ActiveClientConn() []connect.IConnect {
+func (s *XServer) ActiveClientConn() []connect.IConnect {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make([]connect.IConnect, 0, len(s.activeConn))
@@ -164,7 +165,7 @@ func (s *Server) ActiveClientConn() []connect.IConnect {
 //   ctx.Value(RemoteConnContextKey)
 //
 // servicePath, serviceMethod, metadata can be set to zero values.
-func (s *Server) SendMessage(conn net.Conn, servicePath, serviceMethod string,
+func (s *XServer) SendMessage(conn net.Conn, servicePath, serviceMethod string,
 	metadata map[string]string, data []byte) error {
 	ctx := share.WithValue(context.Background(), StartSendRequestContextKey, time.Now().UnixNano())
 	s.Plugins.DoPreWriteRequest(ctx)
@@ -190,26 +191,17 @@ func (s *Server) SendMessage(conn net.Conn, servicePath, serviceMethod string,
 	return err
 }
 
-func (s *Server) getDoneChan() <-chan struct{} {
+func (s *XServer) getDoneChan() <-chan struct{} {
 	return s.doneChan
 }
 
 // Serve starts and listens RPC requests.
 // It is blocked until receiving connections from clients.
-func (s *Server) Serve(network, address string) (err error) {
-	var ln net.Listener
-	ln, err = s.makeListener(network, address)
-	if err != nil {
-		return
-	}
-
-	// try to start gateway
-	ln = s.startGateway(network, ln)
-
-	return s.serveListener(ln)
+func (s *XServer) Serve(network, address string) (err error) {
+	return s.tcpTransport.Serve(network, address)
 }
 
-func (s *Server) serveAsyncWrite(conn net.Conn, writeCh chan *[]byte) {
+func (s *XServer) serveAsyncWrite(conn net.Conn, writeCh chan *[]byte) {
 	for {
 		select {
 		case <-s.doneChan:
@@ -244,11 +236,11 @@ func parseServerTimeout(ctx *share.Context, req *protocol.Message) context.Cance
 	return cancel
 }
 
-func (s *Server) isShutdown() bool {
+func (s *XServer) isShutdown() bool {
 	return atomic.LoadInt32(&s.inShutdown) == 1
 }
 
-func (s *Server) closeConn(conn net.Conn) {
+func (s *XServer) closeConn(conn connect.IConnect) {
 	s.mu.Lock()
 	delete(s.activeConn, conn)
 	s.mu.Unlock()
@@ -258,7 +250,7 @@ func (s *Server) closeConn(conn net.Conn) {
 	s.Plugins.DoPostConnClose(conn)
 }
 
-func (s *Server) readRequest(ctx context.Context, r io.Reader) (req *protocol.Message, err error) {
+func (s *XServer) readRequest(ctx context.Context, r io.Reader) (req *protocol.Message, err error) {
 	err = s.Plugins.DoPreReadRequest(ctx)
 	if err != nil {
 		return nil, err
@@ -276,7 +268,7 @@ func (s *Server) readRequest(ctx context.Context, r io.Reader) (req *protocol.Me
 	return req, err
 }
 
-func (s *Server) auth(ctx context.Context, req *protocol.Message) error {
+func (s *XServer) auth(ctx context.Context, req *protocol.Message) error {
 	if s.AuthFunc != nil {
 		token := req.Metadata[share.AuthKey]
 		return s.AuthFunc(ctx, req, token)
@@ -285,7 +277,7 @@ func (s *Server) auth(ctx context.Context, req *protocol.Message) error {
 	return nil
 }
 
-func (s *Server) handleRequest(ctx context.Context, req *protocol.Message) (res *protocol.Message, err error) {
+func (s *XServer) handleRequest(ctx context.Context, req *protocol.Message) (res *protocol.Message, err error) {
 	serviceName := req.ServicePath
 	methodName := req.ServiceMethod
 
@@ -382,7 +374,7 @@ func (s *Server) handleRequest(ctx context.Context, req *protocol.Message) (res 
 	return res, nil
 }
 
-func (s *Server) handleRequestForFunction(ctx context.Context, req *protocol.Message) (res *protocol.Message, err error) {
+func (s *XServer) handleRequestForFunction(ctx context.Context, req *protocol.Message) (res *protocol.Message, err error) {
 	res = req.Clone()
 
 	res.SetMessageType(protocol.Response)
@@ -453,20 +445,41 @@ func handleError(res *protocol.Message, err error) (*protocol.Message, error) {
 	return res, err
 }
 
-func (s *Server) OnAccess(c connect.IConnect) {
+func (s *XServer) OnAccess(conn connect.IConnect) {
+	if tc, ok := conn.(*net.TCPConn); ok {
+		period := s.options["TCPKeepAlivePeriod"]
+		if period != nil {
+			tc.SetKeepAlive(true)
+			tc.SetKeepAlivePeriod(period.(time.Duration))
+			tc.SetLinger(10)
+		}
+	}
+
+	conn, ok := s.Plugins.DoPostConnAccept(conn)
+	if !ok {
+		conn.Close()
+		return
+	}
+
+	s.mu.Lock()
+	s.activeConn[conn] = struct{}{}
+	s.mu.Unlock()
+
+	if share.Trace {
+		log.Debugf("XServer accepted an conn: %v", conn.RemoteAddr().String())
+	}
+}
+
+func (s *XServer) React(conn gnet.Conn, frame []byte) (out []byte, action gnet.Action) {
 
 }
 
-func (s *Server) React(c gnet.Conn, frame []byte) (out []byte, action gnet.Action) {
-
-}
-
-func (s *Server) OnDisconnect(c connect.IConnect) {
+func (s *XServer) OnDisconnect(conn connect.IConnect) {
 
 }
 
 
-func (s *Server) Register(rcvr interface{}, metadata string) error {
+func (s *XServer) Register(rcvr interface{}, metadata string) error {
 	sname, err := s.serviceManager.Register(rcvr, "", false)
 	if err != nil {
 		return err
@@ -476,7 +489,7 @@ func (s *Server) Register(rcvr interface{}, metadata string) error {
 
 // RegisterName is like Register but uses the provided name for the type
 // instead of the receiver's concrete type.
-func (s *Server) RegisterName(name string, rcvr interface{}, metadata string) error {
+func (s *XServer) RegisterName(name string, rcvr interface{}, metadata string) error {
 	_, err := s.serviceManager.Register(rcvr, name, true)
 	if err != nil {
 		return err
@@ -492,7 +505,7 @@ func (s *Server) RegisterName(name string, rcvr interface{}, metadata string) er
 //	- the third argument is a pointer
 //	- one return value, of type error
 // The client accesses function using a string of the form "servicePath.Method".
-func (s *Server) RegisterFunction(servicePath string, fn interface{}, metadata string) error {
+func (s *XServer) RegisterFunction(servicePath string, fn interface{}, metadata string) error {
 	fname, err := s.serviceManager.RegisterFunction(servicePath, fn, "", false)
 	if err != nil {
 		return err
@@ -503,7 +516,7 @@ func (s *Server) RegisterFunction(servicePath string, fn interface{}, metadata s
 
 // RegisterFunctionName is like RegisterFunction but uses the provided name for the function
 // instead of the function's concrete type.
-func (s *Server) RegisterFunctionName(servicePath string, name string, fn interface{}, metadata string) error {
+func (s *XServer) RegisterFunctionName(servicePath string, name string, fn interface{}, metadata string) error {
 	_, err := s.serviceManager.RegisterFunction(servicePath, fn, name, true)
 	if err != nil {
 		return err
@@ -512,7 +525,7 @@ func (s *Server) RegisterFunctionName(servicePath string, name string, fn interf
 	return s.Plugins.DoRegisterFunction(servicePath, name, fn, metadata)
 }
 
-func (s *Server) UnregisterAll() error {
+func (s *XServer) UnregisterAll() error {
 	serviceNameArr := s.serviceManager.UnregisterAll()
 
 	var es []error
@@ -532,7 +545,7 @@ func (s *Server) UnregisterAll() error {
 
 
 // Close immediately closes all active net.Listeners.
-func (s *Server) Close() error {
+func (s *XServer) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -551,14 +564,14 @@ func (s *Server) Close() error {
 
 // RegisterOnShutdown registers a function to call on Shutdown.
 // This can be used to gracefully shutdown connections.
-func (s *Server) RegisterOnShutdown(f func(s *Server)) {
+func (s *XServer) RegisterOnShutdown(f func(s *XServer)) {
 	s.mu.Lock()
 	s.onShutdown = append(s.onShutdown, f)
 	s.mu.Unlock()
 }
 
 // RegisterOnRestart registers a function to call on Restart.
-func (s *Server) RegisterOnRestart(f func(s *Server)) {
+func (s *XServer) RegisterOnRestart(f func(s *XServer)) {
 	s.mu.Lock()
 	s.onRestart = append(s.onRestart, f)
 	s.mu.Unlock()
@@ -573,7 +586,7 @@ var shutdownPollInterval = 1000 * time.Millisecond
 // If the provided context expires before the shutdown is complete,
 // Shutdown returns the context's error, otherwise it returns any
 // error returned from closing the Server's underlying Listener.
-func (s *Server) Shutdown(ctx context.Context) error {
+func (s *XServer) Shutdown(ctx context.Context) error {
 	var err error
 	if atomic.CompareAndSwapInt32(&s.inShutdown, 0, 1) {
 		log.Info("shutdown begin")
@@ -629,7 +642,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // Restart restarts this server gracefully.
 // It starts a new rpcx server with the same port with SO_REUSEPORT socket option,
 // and shutdown this rpcx server gracefully.
-func (s *Server) Restart(ctx context.Context) error {
+func (s *XServer) Restart(ctx context.Context) error {
 	pid, err := s.startProcess()
 	if err != nil {
 		return err
@@ -641,7 +654,7 @@ func (s *Server) Restart(ctx context.Context) error {
 	return s.Shutdown(ctx)
 }
 
-func (s *Server) startProcess() (int, error) {
+func (s *XServer) startProcess() (int, error) {
 	argv0, err := exec.LookPath(os.Args[0])
 	if err != nil {
 		return 0, err
@@ -664,13 +677,13 @@ func (s *Server) startProcess() (int, error) {
 	return process.Pid, nil
 }
 
-func (s *Server) checkProcessMsg() bool {
+func (s *XServer) checkProcessMsg() bool {
 	size := atomic.LoadInt32(&s.handlerMsgNum)
 	log.Info("need handle in-processing msg size:", size)
 	return size == 0
 }
 
-func (s *Server) closeDoneChanLocked() {
+func (s *XServer) closeDoneChanLocked() {
 	select {
 	case <-s.doneChan:
 		// Already closed. Don't close again.
@@ -689,4 +702,246 @@ func validIP4(ipAddress string) bool {
 	ipAddress = ipAddress[:i] // remove port
 
 	return ip4Reg.MatchString(ipAddress)
+}
+
+func (s *XServer) serveConn(conn net.Conn) {
+	if s.isShutdown() {
+		s.closeConn(conn)
+		return
+	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			const size = 64 << 10
+			buf := make([]byte, size)
+			ss := runtime.Stack(buf, false)
+			if ss > size {
+				ss = size
+			}
+			buf = buf[:ss]
+			log.Errorf("serving %s panic error: %s, stack:\n %s", conn.RemoteAddr(), err, buf)
+		}
+
+		if share.Trace {
+			log.Debugf("server closed conn: %v", conn.RemoteAddr().String())
+		}
+
+		s.closeConn(conn)
+	}()
+
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		if d := s.readTimeout; d != 0 {
+			conn.SetReadDeadline(time.Now().Add(d))
+		}
+		if d := s.writeTimeout; d != 0 {
+			conn.SetWriteDeadline(time.Now().Add(d))
+		}
+		if err := tlsConn.Handshake(); err != nil {
+			log.Errorf("rpcx: TLS handshake error from %s: %v", conn.RemoteAddr(), err)
+			return
+		}
+	}
+
+	r := bufio.NewReaderSize(conn, ReaderBuffsize)
+
+	var writeCh chan *[]byte
+	if s.AsyncWrite {
+		writeCh = make(chan *[]byte, 1)
+		defer close(writeCh)
+		go s.serveAsyncWrite(conn, writeCh)
+	}
+
+	for {
+		if s.isShutdown() {
+			return
+		}
+
+		t0 := time.Now()
+		if s.readTimeout != 0 {
+			conn.SetReadDeadline(t0.Add(s.readTimeout))
+		}
+
+		ctx := share.WithValue(context.Background(), RemoteConnContextKey, conn)
+
+		req, err := s.readRequest(ctx, r)
+		if err != nil {
+			protocol.FreeMsg(req)
+
+			if err == io.EOF {
+				log.Infof("client has closed this connection: %s", conn.RemoteAddr().String())
+			} else if strings.Contains(err.Error(), "use of closed network connection") {
+				log.Infof("rpcx: connection %s is closed", conn.RemoteAddr().String())
+			} else if errors.Is(err, ErrReqReachLimit) {
+				if !req.IsOneway() {
+					res := req.Clone()
+					res.SetMessageType(protocol.Response)
+					if len(res.Payload) > 1024 && req.CompressType() != protocol.None {
+						res.SetCompressType(req.CompressType())
+					}
+					handleError(res, err)
+					s.Plugins.DoPreWriteResponse(ctx, req, res, err)
+					data := res.EncodeSlicePointer()
+					if s.AsyncWrite {
+						writeCh <- data
+					} else {
+						conn.Write(*data)
+						protocol.PutData(data)
+					}
+					s.Plugins.DoPostWriteResponse(ctx, req, res, err)
+					protocol.FreeMsg(res)
+				} else {
+					s.Plugins.DoPreWriteResponse(ctx, req, nil, err)
+				}
+				protocol.FreeMsg(req)
+				continue
+			} else {
+				log.Warnf("rpcx: failed to read request: %v", err)
+			}
+			return
+		}
+
+		if s.writeTimeout != 0 {
+			conn.SetWriteDeadline(t0.Add(s.writeTimeout))
+		}
+
+		if share.Trace {
+			log.Debugf("server received an request %+v from conn: %v", req, conn.RemoteAddr().String())
+		}
+
+		ctx = share.WithLocalValue(ctx, StartRequestContextKey, time.Now().UnixNano())
+		closeConn := false
+		if !req.IsHeartbeat() {
+			err = s.auth(ctx, req)
+			closeConn = err != nil
+		}
+
+		if err != nil {
+			if !req.IsOneway() {
+				res := req.Clone()
+				res.SetMessageType(protocol.Response)
+				if len(res.Payload) > 1024 && req.CompressType() != protocol.None {
+					res.SetCompressType(req.CompressType())
+				}
+				handleError(res, err)
+				s.Plugins.DoPreWriteResponse(ctx, req, res, err)
+				data := res.EncodeSlicePointer()
+				if s.AsyncWrite {
+					writeCh <- data
+				} else {
+					conn.Write(*data)
+					protocol.PutData(data)
+				}
+				s.Plugins.DoPostWriteResponse(ctx, req, res, err)
+				protocol.FreeMsg(res)
+			} else {
+				s.Plugins.DoPreWriteResponse(ctx, req, nil, err)
+			}
+			protocol.FreeMsg(req)
+			// auth failed, closed the connection
+			if closeConn {
+				log.Infof("auth failed for conn %s: %v", conn.RemoteAddr().String(), err)
+				return
+			}
+			continue
+		}
+
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// maybe panic because the writeCh is closed.
+					log.Errorf("failed to handle request: %v", r)
+				}
+			}()
+
+			atomic.AddInt32(&s.handlerMsgNum, 1)
+			defer atomic.AddInt32(&s.handlerMsgNum, -1)
+
+			if req.IsHeartbeat() {
+				s.Plugins.DoHeartbeatRequest(ctx, req)
+				req.SetMessageType(protocol.Response)
+				data := req.EncodeSlicePointer()
+				if s.AsyncWrite {
+					writeCh <- data
+				} else {
+					conn.Write(*data)
+					protocol.PutData(data)
+				}
+				protocol.FreeMsg(req)
+				return
+			}
+
+			resMetadata := make(map[string]string)
+			ctx = share.WithLocalValue(share.WithLocalValue(ctx, share.ReqMetaDataKey, req.Metadata),
+				share.ResMetaDataKey, resMetadata)
+
+			cancelFunc := parseServerTimeout(ctx, req)
+			if cancelFunc != nil {
+				defer cancelFunc()
+			}
+
+			s.Plugins.DoPreHandleRequest(ctx, req)
+
+			if share.Trace {
+				log.Debugf("server handle request %+v from conn: %v", req, conn.RemoteAddr().String())
+			}
+
+			// first use handler
+			if handler, ok := s.router[req.ServicePath+"."+req.ServiceMethod]; ok {
+				sctx := NewContext(ctx, conn, req, writeCh)
+				err := handler(sctx)
+				if err != nil {
+					log.Errorf("[handler internal error]: servicepath: %s, servicemethod, err: %v", req.ServicePath, req.ServiceMethod, err)
+				}
+
+				return
+			}
+
+			//
+			res, err := s.handleRequest(ctx, req)
+			if err != nil {
+				if s.HandleServiceError != nil {
+					s.HandleServiceError(err)
+				} else {
+					log.Warnf("rpcx: failed to handle request: %v", err)
+				}
+			}
+
+			s.Plugins.DoPreWriteResponse(ctx, req, res, err)
+			if !req.IsOneway() {
+				if len(resMetadata) > 0 { // copy meta in context to request
+					meta := res.Metadata
+					if meta == nil {
+						res.Metadata = resMetadata
+					} else {
+						for k, v := range resMetadata {
+							if meta[k] == "" {
+								meta[k] = v
+							}
+						}
+					}
+				}
+
+				if len(res.Payload) > 1024 && req.CompressType() != protocol.None {
+					res.SetCompressType(req.CompressType())
+				}
+				data := res.EncodeSlicePointer()
+				if s.AsyncWrite {
+					writeCh <- data
+				} else {
+					conn.Write(*data)
+					protocol.PutData(data)
+				}
+
+			}
+
+			s.Plugins.DoPostWriteResponse(ctx, req, res, err)
+
+			if share.Trace {
+				log.Debugf("server write response %+v for an request %+v from conn: %v", res, req, conn.RemoteAddr().String())
+			}
+
+			protocol.FreeMsg(req)
+			protocol.FreeMsg(res)
+		}()
+	}
 }

@@ -6,6 +6,11 @@ import (
 )
 
 type IConnect interface {
+	// Context returns a user-defined context.
+	Context() (ctx interface{})
+
+	// SetContext sets a user-defined context.
+	SetContext(ctx interface{})
 
 	// Read reads data from the connection.
 	// Read can be made to time out and return an error after a fixed

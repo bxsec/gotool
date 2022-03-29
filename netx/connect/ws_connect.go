@@ -9,7 +9,18 @@ import (
 type WsConnect struct {
 	Conn *websocket.Conn
 	mt int
+	ctx interface{}
 }
+// Context returns a user-defined context.
+func (ws *WsConnect) Context() (ctx interface{}) {
+	return ws.ctx
+}
+
+// SetContext sets a user-defined context.
+func (ws *WsConnect) SetContext(ctx interface{}) {
+	ws.ctx = ctx
+}
+
 // Read reads data from the connection.
 // Read can be made to time out and return an error after a fixed
 // time limit; see SetDeadline and SetReadDeadline.

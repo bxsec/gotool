@@ -8,7 +8,19 @@ import (
 
 type TcpConnect struct {
 	Conn gnet.Conn
+	ctx interface{}
 }
+
+// Context returns a user-defined context.
+func (tc *TcpConnect) Context() (ctx interface{}) {
+	return tc.ctx
+}
+
+// SetContext sets a user-defined context.
+func (tc *TcpConnect) SetContext(ctx interface{}) {
+	tc.ctx = ctx
+}
+
 // Read reads data from the connection.
 // Read can be made to time out and return an error after a fixed
 // time limit; see SetDeadline and SetReadDeadline.
