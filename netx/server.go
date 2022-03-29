@@ -704,7 +704,7 @@ func validIP4(ipAddress string) bool {
 	return ip4Reg.MatchString(ipAddress)
 }
 
-func (s *XServer) serveConn(conn net.Conn) {
+func (s *XServer) serveConn(conn connect.IConnect) {
 	if s.isShutdown() {
 		s.closeConn(conn)
 		return
@@ -729,18 +729,7 @@ func (s *XServer) serveConn(conn net.Conn) {
 		s.closeConn(conn)
 	}()
 
-	if tlsConn, ok := conn.(*tls.Conn); ok {
-		if d := s.readTimeout; d != 0 {
-			conn.SetReadDeadline(time.Now().Add(d))
-		}
-		if d := s.writeTimeout; d != 0 {
-			conn.SetWriteDeadline(time.Now().Add(d))
-		}
-		if err := tlsConn.Handshake(); err != nil {
-			log.Errorf("rpcx: TLS handshake error from %s: %v", conn.RemoteAddr(), err)
-			return
-		}
-	}
+
 
 	r := bufio.NewReaderSize(conn, ReaderBuffsize)
 

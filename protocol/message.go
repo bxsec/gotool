@@ -405,6 +405,45 @@ func decodeMetadata(l uint32, data []byte) (map[string]string, error) {
 	return m, nil
 }
 
+// 获取包头长度，指定数据长度获取包体的长度
+func (m *Message)GetHeaderLen() int {
+	return 16
+}
+
+func (m *Message)ParseToBodyLen(r io.Reader) (int,error) {
+	// validate rest length for each step?
+
+	// parse header
+	_, err := io.ReadFull(r, m.Header[:1])
+	if err != nil {
+		return 0,err
+	}
+	if !m.Header.CheckMagicNumber() {
+		return 0,fmt.Errorf("wrong magic number: %v", m.Header[0])
+	}
+
+	_, err = io.ReadFull(r, m.Header[1:])
+	if err != nil {
+		return 0,err
+	}
+
+	// total
+	lenData := poolUint32Data.Get().(*[]byte)
+	_, err = io.ReadFull(r, *lenData)
+	if err != nil {
+		poolUint32Data.Put(lenData)
+		return 0,err
+	}
+	l := binary.BigEndian.Uint32(*lenData)
+	poolUint32Data.Put(lenData)
+
+	if MaxMessageLength > 0 && int(l) > MaxMessageLength {
+		return 0,ErrMessageTooLong
+	}
+
+	return int(l),nil
+}
+
 // Read reads a message from r.
 func Read(r io.Reader) (*Message, error) {
 	msg := NewMessage()
@@ -414,6 +453,7 @@ func Read(r io.Reader) (*Message, error) {
 	}
 	return msg, nil
 }
+
 
 // Decode decodes a message from reader.
 func (m *Message) Decode(r io.Reader) error {
