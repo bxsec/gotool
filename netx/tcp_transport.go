@@ -7,7 +7,9 @@ import (
 	"github.com/bxsec/gotool/netx/connect"
 	"github.com/bxsec/gotool/protocol"
 	"github.com/panjf2000/gnet"
+	errors2 "github.com/panjf2000/gnet/pkg/errors"
 	"github.com/panjf2000/gnet/pkg/pool/goroutine"
+	"net"
 	"sync"
 	"time"
 
@@ -27,6 +29,8 @@ type TcpTransport struct {
 	server IServer
 	msgAdapter protocol.IMessage
 
+	transportServer gnet.Server
+
 	mu sync.RWMutex
 	tcpClient map[gnet.Conn]connect.IConnect
 }
@@ -39,6 +43,7 @@ func (s *TcpTransport) getDoneChan() <-chan struct{} {
 func (s *TcpTransport) OnInitComplete(server gnet.Server) (action Action) {
 	glog.Infof("Test codec server is listening on %s (multi-cores: %t, loops: %d)\n",
 		server.Addr.String(), server.Multicore, server.NumEventLoop)
+	s.transportServer = server
 	return
 }
 
@@ -58,6 +63,7 @@ func (s *TcpTransport) OnOpened(c gnet.Conn) (out []byte, action Action) {
 	s.tcpClient[c] = conn
 	s.mu.Unlock()
 	s.server.OnAccess(conn)
+	return nil,None
 }
 
 // OnClosed fires when a connection has been closed.
@@ -67,12 +73,13 @@ func (s *TcpTransport) OnClosed(c gnet.Conn, err error) (action Action) {
 	conn, e := s.tcpClient[c]
 	s.mu.RUnlock()
 	if e == true {
-		s.server.OnAccess(conn)
+		s.server.OnDisconnect(conn)
 	}
 
 	s.mu.Lock()
 	delete(s.tcpClient, c)
 	s.mu.Unlock()
+	return None
 }
 
 func (s *TcpTransport) Tick() (delay time.Duration, action Action) {
@@ -112,6 +119,9 @@ func (s *TcpTransport) Initialize(server IServer) {
 func (s *TcpTransport) SetMessageAdapter(msgAdapter protocol.IMessage) {
 	s.msgAdapter = msgAdapter
 }
+func (s *TcpTransport) Shutdown() error {
+	return nil
+}
 
 // serveListener accepts incoming connections on the Listener ln,
 // creating a new service goroutine for each.
@@ -129,8 +139,11 @@ func (s *TcpTransport) Serve(network, address string) (err error) {
 		gnet.WithTCPKeepAlive(time.Minute*5), gnet.WithCodec(s.codec))
 }
 
+func (s *TcpTransport) Address() net.Addr {
+	return s.transportServer.Addr
+}
 
-/ CustomLengthFieldProtocol : custom protocol
+// CustomLengthFieldProtocol : custom protocol
 // custom protocol header contains Version, ActionType and DataLength fields
 // its payload is Data field
 type CustomLengthFieldProtocol struct {
@@ -172,10 +185,11 @@ func (cc *CustomLengthFieldProtocol) Decode(c gnet.Conn) ([]byte, error) {
 			return data, nil
 		}
 		// log.Println("not enough payload data:", dataLen, protocolLen, dataSize)
-		return nil, gerrors.ErrIncompletePacket
+		return nil, errors2.ErrIncompletePacket
 
 	}
+
 	// log.Println("not enough header data:", size)
-	return nil, gerrors.ErrIncompletePacket
+	return nil, errors2.ErrIncompletePacket
 }
 

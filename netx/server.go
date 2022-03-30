@@ -26,7 +26,6 @@ import (
 	"github.com/bxsec/gotool/netx/connect"
 	"github.com/bxsec/gotool/protocol"
 	"github.com/bxsec/gotool/share"
-	"github.com/panjf2000/gnet"
 )
 
 // ErrServerClosed is returned by the Server's Serve, ListenAndServe after a call to Shutdown or Close.
@@ -135,12 +134,7 @@ func NewServer(options ...OptionFn) *XServer {
 
 // Address returns listened address.
 func (s *XServer) Address() net.Addr {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.ln == nil {
-		return nil
-	}
-	return s.ln.Addr()
+	return s.tcpTransport.Address()
 }
 
 func (s *XServer) AddHandler(servicePath, serviceMethod string, handler func(*Context) error) {
@@ -284,29 +278,22 @@ func (s *XServer) handleRequest(ctx context.Context, req *protocol.Message) (res
 	res = req.Clone()
 
 	res.SetMessageType(protocol.Response)
-	service, ret, err := s.serviceManager.ServiceMethod(serviceName, methodName)
+	service, method, err := s.serviceManager.ServiceMethod(serviceName, methodName)
 	if service == nil {
 		err = errors.New("rpcx: can't find service " + serviceName)
 		return handleError(res, err)
 	}
 
-	if ret == method_service.MethodTypeNone {
-		err = errors.New("rpcx: can't find method " + methodName)
-		return handleError(res, err)
-	} else if ret == method_service.MethodTypeFunction {
-		return s.handleRequestForFunction(ctx, req)
-	}
-	mtype := service.method[methodName]
-	if mtype == nil {
-		if service.function[methodName] != nil { // check raw functions
-			return s.handleRequestForFunction(ctx, req)
-		}
+	if method == nil {
 		err = errors.New("rpcx: can't find method " + methodName)
 		return handleError(res, err)
 	}
 
+	argType := method.GetArgType()
+	replyType := method.GetReplyType()
+
 	// get a argv object from object pool
-	argv := reflectTypePools.Get(mtype.ArgType)
+	argv := pool.ReflectTypePools.Get(argType)
 
 	serializer := share.Serializes[req.SerializeType()]
 	if serializer == nil {
@@ -320,19 +307,20 @@ func (s *XServer) handleRequest(ctx context.Context, req *protocol.Message) (res
 	}
 
 	// and get a reply object from object pool
-	replyv := pool.ReflectTypePools.Get(mtype.ReplyType)
+	replyv := pool.ReflectTypePools.Get(replyType)
 
 	argv, err = s.Plugins.DoPreCall(ctx, serviceName, methodName, argv)
 	if err != nil {
 		// return reply to object pool
-		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
+		pool.ReflectTypePools.Put(replyType, replyv)
 		return handleError(res, err)
 	}
 
-	if mtype.ArgType.Kind() != reflect.Ptr {
-		err = service.call(ctx, mtype, reflect.ValueOf(argv).Elem(), reflect.ValueOf(replyv))
+
+	if argType.Kind() != reflect.Ptr {
+		err = service.Call(ctx, method, reflect.ValueOf(argv).Elem(), reflect.ValueOf(replyv))
 	} else {
-		err = service.call(ctx, mtype, reflect.ValueOf(argv), reflect.ValueOf(replyv))
+		err = service.Call(ctx, method, reflect.ValueOf(argv), reflect.ValueOf(replyv))
 	}
 
 	if err == nil {
@@ -340,13 +328,13 @@ func (s *XServer) handleRequest(ctx context.Context, req *protocol.Message) (res
 	}
 
 	// return argc to object pool
-	pool.ReflectTypePools.Put(mtype.ArgType, argv)
+	pool.ReflectTypePools.Put(argType, argv)
 
 	if err != nil {
 		if replyv != nil {
 			data, err := serializer.Encode(replyv)
 			// return reply to object pool
-			pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
+			pool.ReflectTypePools.Put(replyType, replyv)
 			if err != nil {
 				return handleError(res, err)
 			}
@@ -358,79 +346,17 @@ func (s *XServer) handleRequest(ctx context.Context, req *protocol.Message) (res
 	if !req.IsOneway() {
 		data, err := serializer.Encode(replyv)
 		// return reply to object pool
-		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
+		pool.ReflectTypePools.Put(replyType, replyv)
 		if err != nil {
 			return handleError(res, err)
 		}
 		res.Payload = data
 	} else if replyv != nil {
-		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
+		pool.ReflectTypePools.Put(replyType, replyv)
 	}
 
 	if share.Trace {
 		log.Debugf("server called service %+v for an request %+v", service, req)
-	}
-
-	return res, nil
-}
-
-func (s *XServer) handleRequestForFunction(ctx context.Context, req *protocol.Message) (res *protocol.Message, err error) {
-	res = req.Clone()
-
-	res.SetMessageType(protocol.Response)
-
-	serviceName := req.ServicePath
-	methodName := req.ServiceMethod
-	s.serviceMapMu.RLock()
-	service := s.serviceMap[serviceName]
-	s.serviceMapMu.RUnlock()
-	if service == nil {
-		err = errors.New("rpcx: can't find service  for func raw function")
-		return handleError(res, err)
-	}
-	mtype := service.function[methodName]
-	if mtype == nil {
-		err = errors.New("rpcx: can't find method " + methodName)
-		return handleError(res, err)
-	}
-
-	argv := pool.ReflectTypePools.Get(mtype.ArgType)
-
-	serializer := share.Serializes[req.SerializeType()]
-	if serializer == nil {
-		err = fmt.Errorf("can not find codec for %d", req.SerializeType())
-		return handleError(res, err)
-	}
-
-	err = serializer.Decode(req.Payload, argv)
-	if err != nil {
-		return handleError(res, err)
-	}
-
-	replyv := pool.ReflectTypePools.Get(mtype.ReplyType)
-
-	if mtype.ArgType.Kind() != reflect.Ptr {
-		err = service.callForFunction(ctx, mtype, reflect.ValueOf(argv).Elem(), reflect.ValueOf(replyv))
-	} else {
-		err = service.callForFunction(ctx, mtype, reflect.ValueOf(argv), reflect.ValueOf(replyv))
-	}
-
-	pool.ReflectTypePools.Put(mtype.ArgType, argv)
-
-	if err != nil {
-		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
-		return handleError(res, err)
-	}
-
-	if !req.IsOneway() {
-		data, err := serializer.Encode(replyv)
-		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
-		if err != nil {
-			return handleError(res, err)
-		}
-		res.Payload = data
-	} else if replyv != nil {
-		pool.ReflectTypePools.Put(mtype.ReplyType, replyv)
 	}
 
 	return res, nil
@@ -446,15 +372,6 @@ func handleError(res *protocol.Message, err error) (*protocol.Message, error) {
 }
 
 func (s *XServer) OnAccess(conn connect.IConnect) {
-	if tc, ok := conn.(*net.TCPConn); ok {
-		period := s.options["TCPKeepAlivePeriod"]
-		if period != nil {
-			tc.SetKeepAlive(true)
-			tc.SetKeepAlivePeriod(period.(time.Duration))
-			tc.SetLinger(10)
-		}
-	}
-
 	conn, ok := s.Plugins.DoPostConnAccept(conn)
 	if !ok {
 		conn.Close()
@@ -470,13 +387,19 @@ func (s *XServer) OnAccess(conn connect.IConnect) {
 	}
 }
 
-func (s *XServer) React(conn gnet.Conn, frame []byte) (out []byte, action gnet.Action) {
-
-}
-
 func (s *XServer) OnDisconnect(conn connect.IConnect) {
 
 }
+
+func (s *XServer) OnShutdown(netTransport INetTransport) {
+
+}
+
+func (s *XServer) React(conn connect.IConnect, frame []byte) (out []byte, action Action) {
+	return
+}
+
+
 
 
 func (s *XServer) Register(rcvr interface{}, metadata string) error {
@@ -550,9 +473,7 @@ func (s *XServer) Close() error {
 	defer s.mu.Unlock()
 
 	var err error
-	if s.ln != nil {
-		err = s.ln.Close()
-	}
+	s.tcpTransport.Close()
 	for c := range s.activeConn {
 		c.Close()
 		delete(s.activeConn, c)
@@ -616,13 +537,6 @@ func (s *XServer) Shutdown(ctx context.Context) error {
 			}
 		}
 
-		if s.gatewayHTTPServer != nil {
-			if err := s.closeHTTP1APIGateway(ctx); err != nil {
-				log.Warnf("failed to close gateway: %v", err)
-			} else {
-				log.Info("closed gateway")
-			}
-		}
 
 		s.mu.Lock()
 		for conn := range s.activeConn {

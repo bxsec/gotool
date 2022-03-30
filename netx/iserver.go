@@ -19,8 +19,10 @@ const (
 
 type IServer interface {
 	OnAccess(conn connect.IConnect)
+	OnDisconnect(conn connect.IConnect)
+	OnShutdown(netTransport INetTransport)
 
 	React(conn connect.IConnect, frame []byte) (out []byte, action Action)
 
-	OnDisconnect(conn connect.IConnect)
+
 }
