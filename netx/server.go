@@ -113,38 +113,19 @@ type XServer struct {
 
 // NewServer returns a server.
 func NewServer(options ...OptionFn) *XServer {
-	s := &XServer{
-		readTimeout:        0,
-		writeTimeout:       0,
-		AsyncWrite:         true,
-		router:             nil,
-		msgAdapter:         nil,
-		mu:                 sync.RWMutex{},
-		activeConn:         nil,
-		serviceManager:     nil,
-		doneChan:           nil,
-		seq:                0,
-		inShutdown:         0,
-		onShutdown:         nil,
-		onRestart:          nil,
-		tlsConfig:          nil,
-		options:            nil,
-		tcpTransport:       nil,
-		Plugins:            nil,
-		AuthFunc:           nil,
-		handlerMsgNum:      0,
-		HandleServiceError: nil,
-	}
-	
+
 	s := &XServer{
 		Plugins:    &pluginContainer{},
 		options:    make(map[string]interface{}),
 		activeConn: make(map[connect.IConnect]struct{}),
 		doneChan:   make(chan struct{}),
 		serviceManager: method_service.NewServiceManager(),
+		tcpTransport: NewTcpTransport(),
 		router:     make(map[string]Handler),
 		AsyncWrite: false, // 除非你想benchmark或者极致优化，否则建议你设置为false
+		msgAdapter:protocol.NewMessage(),
 	}
+	s.tcpTransport.SetMessageAdapter(s.msgAdapter)
 
 	for _, op := range options {
 		op(s)

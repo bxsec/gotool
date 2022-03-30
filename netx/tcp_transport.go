@@ -55,13 +55,14 @@ func (s *TcpTransport) getDoneChan() <-chan struct{} {
 
 
 func (s *TcpTransport) OnInitComplete(server gnet.Server) (action gnet.Action) {
-	glog.Infof("Test codec server is listening on %s (multi-cores: %t, loops: %d)\n",
+	glog.Infof("server is listening on %s (multi-cores: %t, loops: %d)\n",
 		server.Addr.String(), server.Multicore, server.NumEventLoop)
 	s.transportServer = server
 	return gnet.None
 }
 
 func (s *TcpTransport) OnShutdown(server gnet.Server) {
+	glog.Info("tcp transport shutdown")
 	return
 }
 

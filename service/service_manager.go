@@ -14,7 +14,6 @@ import (
 
 func NewServiceManager() *ServiceManager {
 	return &ServiceManager{
-		serviceMapMu: sync.RWMutex{},
 		serviceMap:   make(map[string]*Service),
 	}
 }
