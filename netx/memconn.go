@@ -10,6 +10,6 @@ func init() {
 	makeListeners["memu"] = memconnMakeListener
 }
 
-func memconnMakeListener(s *Server, address string) (ln net.Listener, err error) {
+func memconnMakeListener(s *XServer, address string) (ln net.Listener, err error) {
 	return memconn.Listen("memu", address)
 }

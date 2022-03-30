@@ -9,12 +9,11 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/rs/cors"
-	"github.com/smallnest/rpcx/protocol"
-	"github.com/smallnest/rpcx/share"
+	"github.com/bxsec/gotool/protocol"
+	"github.com/bxsec/gotool/share"
 )
 
-func (s *Server) jsonrpcHandler(w http.ResponseWriter, r *http.Request) {
+func (s *XServer) jsonrpcHandler(w http.ResponseWriter, r *http.Request) {
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -48,7 +47,7 @@ func (s *Server) jsonrpcHandler(w http.ResponseWriter, r *http.Request) {
 	go s.handleJSONRPCRequest(ctx, req, r.Header)
 }
 
-func (s *Server) handleJSONRPCRequest(ctx context.Context, r *jsonrpcRequest, header http.Header) *jsonrpcRespone {
+func (s *XServer) handleJSONRPCRequest(ctx context.Context, r *jsonrpcRequest, header http.Header) *jsonrpcRespone {
 	s.Plugins.DoPreReadRequest(ctx)
 
 	var res = &jsonrpcRespone{}
@@ -214,11 +213,11 @@ func AllowAllCORSOptions() *CORSOptions {
 //    	AllowCredentials: true,
 //    }
 //
-func (s *Server) SetCORS(options *CORSOptions) {
-	s.corsOptions = options
-}
+//func (s *XServer) SetCORS(options *CORSOptions) {
+//	s.corsOptions = options
+//}
 
-func (s *Server) startJSONRPC2(ln net.Listener) {
+func (s *XServer) startJSONRPC2(ln net.Listener) {
 	newServer := http.NewServeMux()
 	newServer.HandleFunc("/", s.jsonrpcHandler)
 
@@ -226,16 +225,16 @@ func (s *Server) startJSONRPC2(ln net.Listener) {
 		return context.WithValue(ctx, HttpConnContextKey, c)
 	}}
 
-	if s.corsOptions != nil {
-		opt := cors.Options(*s.corsOptions)
-		c := cors.New(opt)
-		mux := c.Handler(newServer)
-		srv.Handler = mux
-
-		go srv.Serve(ln)
-	} else {
+	//if s.corsOptions != nil {
+	//	opt := cors.Options(*s.corsOptions)
+	//	c := cors.New(opt)
+	//	mux := c.Handler(newServer)
+	//	srv.Handler = mux
+	//
+	//	go srv.Serve(ln)
+	//} else {
 		srv.Handler = newServer
 		go srv.Serve(ln)
-	}
+	//}
 
 }

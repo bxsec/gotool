@@ -68,7 +68,7 @@ func NewFileTransfer(addr string, handler FileTransferHandler, downloadFileHandl
 }
 
 // EnableFileTransfer supports filetransfer service in this server.
-func (s *Server) EnableFileTransfer(serviceName string, fileTransfer *FileTransfer) {
+func (s *XServer) EnableFileTransfer(serviceName string, fileTransfer *FileTransfer) {
 	if serviceName == "" {
 		serviceName = share.SendFileServiceName
 	}

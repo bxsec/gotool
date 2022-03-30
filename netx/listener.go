@@ -24,11 +24,11 @@ func RegisterMakeListener(network string, ml MakeListener) {
 }
 
 // MakeListener defines a listener generator.
-type MakeListener func(s *Server, address string) (ln net.Listener, err error)
+type MakeListener func(s *XServer, address string) (ln net.Listener, err error)
 
 // block can be nil if the caller wishes to skip encryption in kcp.
 // tlsConfig can be nil iff we are not using network "quic".
-func (s *Server) makeListener(network, address string) (ln net.Listener, err error) {
+func (s *XServer) makeListener(network, address string) (ln net.Listener, err error) {
 	ml := makeListeners[network]
 	if ml == nil {
 		return nil, fmt.Errorf("can not make listener for %s", network)
@@ -42,7 +42,7 @@ func (s *Server) makeListener(network, address string) (ln net.Listener, err err
 }
 
 func tcpMakeListener(network string) MakeListener {
-	return func(s *Server, address string) (ln net.Listener, err error) {
+	return func(s *XServer, address string) (ln net.Listener, err error) {
 		if s.tlsConfig == nil {
 			ln, err = net.Listen(network, address)
 		} else {

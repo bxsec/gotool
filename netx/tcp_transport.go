@@ -16,6 +16,20 @@ import (
 	glog "github.com/bxsec/gotool/log"
 )
 
+func NewTcpTransport() INetTransport {
+	return &TcpTransport{
+		addr:            "",
+		multicore:       false,
+		async:           false,
+		codec:           nil,
+		workerPool:      nil,
+		doneChan:        nil,
+		server:          nil,
+		msgAdapter:      nil,
+		tcpClient:       make(map[gnet.Conn]connect.IConnect),
+	}
+}
+
 type TcpTransport struct {
 	*gnet.EventServer
 	addr       string
@@ -40,11 +54,11 @@ func (s *TcpTransport) getDoneChan() <-chan struct{} {
 }
 
 
-func (s *TcpTransport) OnInitComplete(server gnet.Server) (action Action) {
+func (s *TcpTransport) OnInitComplete(server gnet.Server) (action gnet.Action) {
 	glog.Infof("Test codec server is listening on %s (multi-cores: %t, loops: %d)\n",
 		server.Addr.String(), server.Multicore, server.NumEventLoop)
 	s.transportServer = server
-	return
+	return gnet.None
 }
 
 func (s *TcpTransport) OnShutdown(server gnet.Server) {
@@ -57,18 +71,18 @@ func (s *TcpTransport) OnShutdown(server gnet.Server) {
 // It is usually not recommended to send large amounts of data back to the peer in OnOpened.
 //
 // Note that the bytes returned by OnOpened will be sent back to the peer without being encoded.
-func (s *TcpTransport) OnOpened(c gnet.Conn) (out []byte, action Action) {
+func (s *TcpTransport) OnOpened(c gnet.Conn) (out []byte, action gnet.Action) {
 	conn := &connect.TcpConnect{Conn: c}
 	s.mu.Lock()
 	s.tcpClient[c] = conn
 	s.mu.Unlock()
 	s.server.OnAccess(conn)
-	return nil,None
+	return nil,gnet.None
 }
 
 // OnClosed fires when a connection has been closed.
 // The parameter err is the last known connection error.
-func (s *TcpTransport) OnClosed(c gnet.Conn, err error) (action Action) {
+func (s *TcpTransport) OnClosed(c gnet.Conn, err error) (action gnet.Action) {
 	s.mu.RLock()
 	conn, e := s.tcpClient[c]
 	s.mu.RUnlock()
@@ -79,10 +93,10 @@ func (s *TcpTransport) OnClosed(c gnet.Conn, err error) (action Action) {
 	s.mu.Lock()
 	delete(s.tcpClient, c)
 	s.mu.Unlock()
-	return None
+	return gnet.None
 }
 
-func (s *TcpTransport) Tick() (delay time.Duration, action Action) {
+func (s *TcpTransport) Tick() (delay time.Duration, action gnet.Action) {
 	return
 }
 
@@ -119,6 +133,9 @@ func (s *TcpTransport) Initialize(server IServer) {
 func (s *TcpTransport) SetMessageAdapter(msgAdapter protocol.IMessage) {
 	s.msgAdapter = msgAdapter
 }
+
+
+
 func (s *TcpTransport) Shutdown() error {
 	return nil
 }

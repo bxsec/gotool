@@ -10,5 +10,6 @@ type INetTransport interface {
 	SetMessageAdapter(msgAdapter protocol.IMessage)
 	Serve(network,address string) error
 	Shutdown() error
+	// Close immediately closes all active net.Listeners.
 	Address() net.Addr
 }

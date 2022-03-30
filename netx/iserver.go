@@ -2,6 +2,7 @@ package netx
 
 import (
 	"github.com/bxsec/gotool/netx/connect"
+	"github.com/bxsec/gotool/protocol"
 )
 
 type Action int
@@ -24,5 +25,5 @@ type IServer interface {
 
 	React(conn connect.IConnect, frame []byte) (out []byte, action Action)
 
-
+	SetMessageAdapter(msgAdapter protocol.IMessage)
 }

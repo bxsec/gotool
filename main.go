@@ -1,12 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"github.com/bxsec/gotool/util"
+	"github.com/bxsec/gotool/netx"
 )
 
 func main() {
-	uid := util.GetUID()
-	fmt.Println("uid:", uid)
+	server := netx.NewServer()
+	server.Serve("tcp", "localhost:8972")
 }
 

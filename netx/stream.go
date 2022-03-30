@@ -57,7 +57,7 @@ func NewStreamService(addr string, streamHandler StreamHandler, acceptor StreamA
 }
 
 // EnableFileTransfer supports filetransfer service in this server.
-func (s *Server) EnableStreamService(serviceName string, streamService *StreamService) {
+func (s *XServer) EnableStreamService(serviceName string, streamService *StreamService) {
 	if serviceName == "" {
 		serviceName = share.StreamServiceName
 	}

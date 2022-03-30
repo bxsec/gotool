@@ -2,7 +2,7 @@ package netx
 
 import (
 	"context"
-	"net"
+	"github.com/bxsec/gotool/netx/connect"
 
 	"github.com/bxsec/gotool/errors"
 	"github.com/bxsec/gotool/protocol"
@@ -20,8 +20,8 @@ type PluginContainer interface {
 	DoRegisterFunction(serviceName, fname string, fn interface{}, metadata string) error
 	DoUnregister(name string) error
 
-	DoPostConnAccept(net.Conn) (net.Conn, bool)
-	DoPostConnClose(net.Conn) bool
+	DoPostConnAccept(connect.IConnect) (connect.IConnect, bool)
+	DoPostConnClose(connect.IConnect) bool
 
 	DoPreReadRequest(ctx context.Context) error
 	DoPostReadRequest(ctx context.Context, r *protocol.Message, e error) error
@@ -60,12 +60,12 @@ type (
 	// if returns false, it means subsequent IPostConnAcceptPlugins should not continue to handle this conn
 	// and this conn has been closed.
 	PostConnAcceptPlugin interface {
-		HandleConnAccept(net.Conn) (net.Conn, bool)
+		HandleConnAccept(connect.IConnect) (connect.IConnect, bool)
 	}
 
 	// PostConnClosePlugin represents client connection close plugin.
 	PostConnClosePlugin interface {
-		HandleConnClose(net.Conn) bool
+		HandleConnClose(connect.IConnect) bool
 	}
 
 	// PreReadRequestPlugin represents .
@@ -206,7 +206,7 @@ func (p *pluginContainer) DoUnregister(name string) error {
 }
 
 // DoPostConnAccept handles accepted conn
-func (p *pluginContainer) DoPostConnAccept(conn net.Conn) (net.Conn, bool) {
+func (p *pluginContainer) DoPostConnAccept(conn connect.IConnect) (connect.IConnect, bool) {
 	var flag bool
 	for i := range p.plugins {
 		if plugin, ok := p.plugins[i].(PostConnAcceptPlugin); ok {
@@ -221,7 +221,7 @@ func (p *pluginContainer) DoPostConnAccept(conn net.Conn) (net.Conn, bool) {
 }
 
 // DoPostConnClose handles closed conn
-func (p *pluginContainer) DoPostConnClose(conn net.Conn) bool {
+func (p *pluginContainer) DoPostConnClose(conn connect.IConnect) bool {
 	var flag bool
 	for i := range p.plugins {
 		if plugin, ok := p.plugins[i].(PostConnClosePlugin); ok {
