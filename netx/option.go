@@ -6,7 +6,7 @@ import (
 )
 
 // OptionFn configures options of server.
-type OptionFn func(server *XServer)
+type ServerOptionFn func(server *XServer)
 
 // // WithOptions sets multiple options.
 // func WithOptions(ops map[string]interface{}) OptionFn {
@@ -18,22 +18,24 @@ type OptionFn func(server *XServer)
 // }
 
 // WithTLSConfig sets tls.Config.
-func WithTLSConfig(cfg *tls.Config) OptionFn {
+func WithTLSConfig(cfg *tls.Config) ServerOptionFn {
 	return func(s *XServer) {
 		s.tlsConfig = cfg
 	}
 }
 
 // WithReadTimeout sets readTimeout.
-func WithReadTimeout(readTimeout time.Duration) OptionFn {
+func WithReadTimeout(readTimeout time.Duration) ServerOptionFn {
 	return func(s *XServer) {
 		s.readTimeout = readTimeout
 	}
 }
 
 // WithWriteTimeout sets writeTimeout.
-func WithWriteTimeout(writeTimeout time.Duration) OptionFn {
+func WithWriteTimeout(writeTimeout time.Duration) ServerOptionFn {
 	return func(s *XServer) {
 		s.writeTimeout = writeTimeout
 	}
 }
+
+type TransportOptionFn func(transport *TcpTransport)

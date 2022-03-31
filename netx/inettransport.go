@@ -6,7 +6,7 @@ import (
 )
 
 type INetTransport interface {
-	Initialize(server IServer)
+	SetServer(server IServer)
 	SetMessageAdapter(msgAdapter protocol.IMessage)
 	Serve(network,address string) error
 	Shutdown() error

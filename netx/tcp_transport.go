@@ -16,8 +16,8 @@ import (
 	glog "github.com/bxsec/gotool/log"
 )
 
-func NewTcpTransport() INetTransport {
-	return &TcpTransport{
+func NewTcpTransport(options ...TransportOptionFn) INetTransport {
+	tcpTransport := &TcpTransport{
 		addr:            "",
 		multicore:       false,
 		async:           false,
@@ -28,6 +28,11 @@ func NewTcpTransport() INetTransport {
 		msgAdapter:      nil,
 		tcpClient:       make(map[gnet.Conn]connect.IConnect),
 	}
+
+	for _, op := range options {
+		op(tcpTransport)
+	}
+	return tcpTransport
 }
 
 type TcpTransport struct {
@@ -127,7 +132,7 @@ func (cs *TcpTransport) React(frame []byte, c gnet.Conn) (out []byte, action gne
 
 // ITcpTransport Method
 
-func (s *TcpTransport) Initialize(server IServer) {
+func (s *TcpTransport) SetServer(server IServer) {
 	s.server = server
 }
 

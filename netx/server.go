@@ -112,7 +112,7 @@ type XServer struct {
 }
 
 // NewServer returns a server.
-func NewServer(options ...OptionFn) *XServer {
+func NewServer(options ...ServerOptionFn) *XServer {
 
 	s := &XServer{
 		Plugins:    &pluginContainer{},
@@ -125,7 +125,14 @@ func NewServer(options ...OptionFn) *XServer {
 		AsyncWrite: false, // 除非你想benchmark或者极致优化，否则建议你设置为false
 		msgAdapter:protocol.NewMessage(),
 	}
+
+
+	s.tcpTransport.SetServer(s)
 	s.tcpTransport.SetMessageAdapter(s.msgAdapter)
+
+
+
+
 
 	for _, op := range options {
 		op(s)
