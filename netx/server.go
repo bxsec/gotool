@@ -632,6 +632,9 @@ func (s *XServer) React(conn connect.IConnect, frame []byte) (out []byte, action
 func (s *XServer) SetMessageAdapter(msgAdapter protocol.IMessage) {
 	s.msgAdapter = msgAdapter
 }
+func (s *XServer) SetServiceManager(serviceManager *method_service.ServiceManager) {
+	s.serviceManager = serviceManager
+}
 
 
 func (s *XServer) Register(rcvr interface{}, metadata string) error {
