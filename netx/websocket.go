@@ -2,7 +2,7 @@ package netx
 
 import (
 	connect2 "github.com/bxsec/gotool/netx/connect"
-	"github.com/gofiber/websocket/v2"
+	"github.com/gorilla/websocket"
 )
 
 func (s *XServer) ServeWS(conn *websocket.Conn) {
