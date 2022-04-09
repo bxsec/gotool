@@ -2,9 +2,9 @@ package share
 
 import (
 	"context"
+	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type OpenTelemetryKeyType int

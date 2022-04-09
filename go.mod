@@ -6,6 +6,7 @@ require (
 	github.com/akutz/memconn v0.1.0
 	github.com/apache/thrift v0.16.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
+	github.com/fasthttp/websocket v1.5.0 // indirect
 	github.com/fatih/color v1.13.0
 	github.com/gofiber/websocket/v2 v2.0.19
 	github.com/gogo/protobuf v1.3.2
