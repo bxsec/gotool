@@ -1,4 +1,4 @@
-package share
+package server
 
 import (
 	"context"
@@ -13,7 +13,7 @@ var (
 )
 
 func TestContext(t *testing.T) {
-	rpcxContext := NewContext(context.Background())
+	rpcxContext := NewContext()
 	assert.NotNil(t, rpcxContext.Context)
 	assert.NotNil(t, rpcxContext.tags)
 
@@ -28,7 +28,7 @@ func TestContext(t *testing.T) {
 
 func TestWithValue(t *testing.T) {
 	ctx := WithValue(context.Background(), "key", "value")
-	assert.NotNil(t, ctx.tags)
+
 }
 
 func TestWithLocalValue(t *testing.T) {

@@ -6,8 +6,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/bxsec/gotool/codec"
 	errors2 "github.com/bxsec/gotool/errors"
 	"github.com/bxsec/gotool/pool"
+	"github.com/bxsec/gotool/server"
 	method_service "github.com/bxsec/gotool/service"
 	"io"
 	"net"
@@ -77,7 +79,7 @@ type XServer struct {
 	AsyncWrite bool // set true if your server only serves few clients
 
 	router map[string]Handler
-	msgAdapter protocol.IMessage
+	msgAdapter protocol.IRpcMessage
 
 	mu         sync.RWMutex
 	activeConn map[connect.IConnect]struct{}
@@ -104,7 +106,7 @@ type XServer struct {
 	Plugins PluginContainer
 
 	// AuthFunc can be used to auth.
-	AuthFunc func(ctx context.Context, req *protocol.Message, token string) error
+	AuthFunc func(ctx context.Context, req *protocol.RpcMessage, token string) error
 
 	handlerMsgNum int32
 
@@ -123,7 +125,7 @@ func NewServer(options ...ServerOptionFn) *XServer {
 		tcpTransport: NewTcpTransport(),
 		router:     make(map[string]Handler),
 		AsyncWrite: false, // 除非你想benchmark或者极致优化，否则建议你设置为false
-		msgAdapter:protocol.NewMessage(),
+		//msgAdapter:protocol.NewMessage(),
 	}
 
 
@@ -173,7 +175,7 @@ func (s *XServer) ActiveClientConn() []connect.IConnect {
 // servicePath, serviceMethod, metadata can be set to zero values.
 func (s *XServer) SendMessage(conn net.Conn, servicePath, serviceMethod string,
 	metadata map[string]string, data []byte) error {
-	ctx := share.WithValue(context.Background(), StartSendRequestContextKey, time.Now().UnixNano())
+	ctx := server.WithValue(context.Background(), StartSendRequestContextKey, time.Now().UnixNano())
 	s.Plugins.DoPreWriteRequest(ctx)
 
 	req := protocol.GetPooledMsg()
@@ -182,7 +184,7 @@ func (s *XServer) SendMessage(conn net.Conn, servicePath, serviceMethod string,
 	seq := atomic.AddUint64(&s.seq, 1)
 	req.SetSeq(seq)
 	req.SetOneway(true)
-	req.SetSerializeType(protocol.SerializeNone)
+	req.SetSerializeType(codec.CodecNone)
 	req.ServicePath = servicePath
 	req.ServiceMethod = serviceMethod
 	req.Metadata = metadata
@@ -222,7 +224,7 @@ func (s *XServer) serveAsyncWrite(conn net.Conn, writeCh chan *[]byte) {
 	}
 }
 
-func parseServerTimeout(ctx *share.Context, req *protocol.Message) context.CancelFunc {
+func parseServerTimeout(ctx server.Context, req *protocol.RpcMessage) context.CancelFunc {
 	if req == nil || req.Metadata == nil {
 		return nil
 	}
@@ -237,8 +239,7 @@ func parseServerTimeout(ctx *share.Context, req *protocol.Message) context.Cance
 		return nil
 	}
 
-	newCtx, cancel := context.WithTimeout(ctx.Context, time.Duration(timeout)*time.Millisecond)
-	ctx.Context = newCtx
+	_, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
 	return cancel
 }
 
@@ -247,7 +248,7 @@ func (s *XServer) isShutdown() bool {
 }
 
 
-func (s *XServer) readRequest(ctx context.Context, r io.Reader) (req *protocol.Message, err error) {
+func (s *XServer) readRequest(ctx context.Context, r io.Reader) (req *protocol.RpcMessage, err error) {
 	err = s.Plugins.DoPreReadRequest(ctx)
 	if err != nil {
 		return nil, err
@@ -265,7 +266,7 @@ func (s *XServer) readRequest(ctx context.Context, r io.Reader) (req *protocol.M
 	return req, err
 }
 
-func (s *XServer) auth(ctx context.Context, req *protocol.Message) error {
+func (s *XServer) auth(ctx context.Context, req *protocol.RpcMessage) error {
 	if s.AuthFunc != nil {
 		token := req.Metadata[share.AuthKey]
 		return s.AuthFunc(ctx, req, token)
@@ -274,7 +275,7 @@ func (s *XServer) auth(ctx context.Context, req *protocol.Message) error {
 	return nil
 }
 
-func (s *XServer) handleRequest(ctx context.Context, req *protocol.Message) (res *protocol.Message, err error) {
+func (s *XServer) handleRequest(ctx context.Context, req *protocol.RpcMessage) (res *protocol.RpcMessage, err error) {
 	serviceName := req.ServicePath
 	methodName := req.ServiceMethod
 
@@ -298,7 +299,7 @@ func (s *XServer) handleRequest(ctx context.Context, req *protocol.Message) (res
 	// get a argv object from object pool
 	argv := pool.ReflectTypePools.Get(argType)
 
-	serializer := share.Serializes[req.SerializeType()]
+	serializer := share.Codecs[req.SerializeType()]
 	if serializer == nil {
 		err = fmt.Errorf("can not find codec for %d", req.SerializeType())
 		return handleError(res, err)
@@ -365,7 +366,7 @@ func (s *XServer) handleRequest(ctx context.Context, req *protocol.Message) (res
 	return res, nil
 }
 
-func handleError(res *protocol.Message, err error) (*protocol.Message, error) {
+func handleError(res *protocol.RpcMessage, err error) (*protocol.RpcMessage, error) {
 	res.SetMessageStatusType(protocol.Error)
 	if res.Metadata == nil {
 		res.Metadata = make(map[string]string)
@@ -444,7 +445,7 @@ func (s *XServer) React(conn connect.IConnect, frame []byte) (out []byte, action
 		conn.SetReadDeadline(t0.Add(s.readTimeout))
 	}
 
-	ctx := share.WithValue(context.Background(), RemoteConnContextKey, conn)
+	ctx := server.WithValue(context.Background(), RemoteConnContextKey, conn)
 
 	req, err := s.readRequest(ctx, r)
 	if err != nil {
@@ -491,7 +492,7 @@ func (s *XServer) React(conn connect.IConnect, frame []byte) (out []byte, action
 		log.Debugf("server received an request %+v from conn: %v", req, conn.RemoteAddr().String())
 	}
 
-	ctx = share.WithLocalValue(ctx, StartRequestContextKey, time.Now().UnixNano())
+	//ctx = server.WithLocalValue(ctx, StartRequestContextKey, time.Now().UnixNano())
 	closeConn := false
 	if !req.IsHeartbeat() {
 		err = s.auth(ctx, req)
@@ -554,8 +555,8 @@ func (s *XServer) React(conn connect.IConnect, frame []byte) (out []byte, action
 		}
 
 		resMetadata := make(map[string]string)
-		ctx = share.WithLocalValue(share.WithLocalValue(ctx, share.ReqMetaDataKey, req.Metadata),
-			share.ResMetaDataKey, resMetadata)
+		//ctx = server.WithLocalValue(server.WithLocalValue(ctx, share.ReqMetaDataKey, req.Metadata),
+		//	share.ResMetaDataKey, resMetadata)
 
 		cancelFunc := parseServerTimeout(ctx, req)
 		if cancelFunc != nil {
@@ -629,7 +630,7 @@ func (s *XServer) React(conn connect.IConnect, frame []byte) (out []byte, action
 	return nil,None
 }
 
-func (s *XServer) SetMessageAdapter(msgAdapter protocol.IMessage) {
+func (s *XServer) SetMessageAdapter(msgAdapter protocol.IRpcMessage) {
 	s.msgAdapter = msgAdapter
 }
 func (s *XServer) SetServiceManager(serviceManager *method_service.ServiceManager) {

@@ -2,6 +2,7 @@ package netx
 
 import (
 	"fmt"
+	"github.com/bxsec/gotool/server"
 	"net"
 
 	"github.com/bxsec/gotool/protocol"
@@ -11,14 +12,14 @@ import (
 // Context represents a rpcx FastCall context.
 type Context struct {
 	conn net.Conn
-	req  *protocol.Message
-	ctx  *share.Context
+	req  *protocol.RpcMessage
+	ctx  server.Context
 
 	writeCh chan *[]byte
 }
 
 // NewContext creates a netx.Context for Handler.
-func NewContext(ctx *share.Context, conn net.Conn, req *protocol.Message, writeCh chan *[]byte) *Context {
+func NewContext(ctx server.Context, conn net.Conn, req *protocol.RpcMessage, writeCh chan *[]byte) *Context {
 	return &Context{conn: conn, req: req, ctx: ctx, writeCh: writeCh}
 }
 
@@ -28,7 +29,7 @@ func (ctx *Context) Get(key interface{}) interface{} {
 }
 
 // SetValue sets the kv pair.
-func (ctx *Context) SetValue(key, val interface{}) {
+func (ctx Context) SetValue(key, val interface{}) {
 	if key == nil || val == nil {
 		return
 	}
@@ -40,34 +41,39 @@ func (ctx *Context) DeleteKey(key interface{}) {
 	if ctx.ctx == nil || key == nil {
 		return
 	}
-	ctx.ctx.DeleteKey(key)
+
+	if str,ok:= key.(string); ok {
+		ctx.ctx.Remove(str)
+	}
+
+
 }
 
 // Payload returns the  payload.
-func (ctx *Context) Payload() []byte {
+func (ctx Context) Payload() []byte {
 	return ctx.req.Payload
 }
 
 // Metadata returns the metadata.
-func (ctx *Context) Metadata() map[string]string {
+func (ctx Context) Metadata() map[string]string {
 	return ctx.req.Metadata
 }
 
 // ServicePath returns the ServicePath.
-func (ctx *Context) ServicePath() string {
+func (ctx Context) ServicePath() string {
 	return ctx.req.ServicePath
 }
 
 // ServiceMethod returns the ServiceMethod.
-func (ctx *Context) ServiceMethod() string {
+func (ctx Context) ServiceMethod() string {
 	return ctx.req.ServiceMethod
 }
 
 // Bind parses the body data and stores the result to v.
-func (ctx *Context) Bind(v interface{}) error {
+func (ctx Context) Bind(v interface{}) error {
 	req := ctx.req
 	if v != nil {
-		codec := share.Serializes[req.SerializeType()]
+		codec := share.Codecs[req.SerializeType()]
 		if codec == nil {
 			return fmt.Errorf("can not find codec for %d", req.SerializeType())
 		}
@@ -80,14 +86,14 @@ func (ctx *Context) Bind(v interface{}) error {
 	return nil
 }
 
-func (ctx *Context) Write(v interface{}) error {
+func (ctx Context) Write(v interface{}) error {
 	req := ctx.req
 
 	if req.IsOneway() { // no need to send response
 		return nil
 	}
 
-	codec := share.Serializes[req.SerializeType()]
+	codec := share.Codecs[req.SerializeType()]
 	if codec == nil {
 		return fmt.Errorf("can not find codec for %d", req.SerializeType())
 	}
@@ -134,14 +140,14 @@ func (ctx *Context) Write(v interface{}) error {
 	return err
 }
 
-func (ctx *Context) WriteError(err error) error {
+func (ctx Context) WriteError(err error) error {
 	req := ctx.req
 
 	if req.IsOneway() { // no need to send response
 		return nil
 	}
 
-	codec := share.Serializes[req.SerializeType()]
+	codec := share.Codecs[req.SerializeType()]
 	if codec == nil {
 		return fmt.Errorf("can not find codec for %d", req.SerializeType())
 	}

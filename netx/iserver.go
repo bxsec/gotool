@@ -26,6 +26,6 @@ type IServer interface {
 
 	React(conn connect.IConnect, frame []byte) (out []byte, action Action)
 
-	SetMessageAdapter(msgAdapter protocol.IMessage)
+	SetMessageAdapter(msgAdapter protocol.IRpcMessage)
 	SetServiceManager(sm *service.ServiceManager)
 }

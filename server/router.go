@@ -1,4 +1,4 @@
-package share
+package server
 
 import (
 	"net/http"
@@ -6,7 +6,7 @@ import (
 )
 
 // var _ context.Context = &Context{}
-type HandlerFunc func(*Context)
+type HandlerFunc func(Context)
 
 type HandlersChain []HandlerFunc
 
@@ -102,16 +102,18 @@ func (r *router) getRoute(method string, path string) (*node, map[string]string)
 	return nil, nil
 }
 
-func (r *router) handle(c *Context) {
-	n, params := r.getRoute(c.Method, c.Path)
+func (r *router) handle(c Context) {
+	n, params := r.getRoute(c.GetMethod(), c.GetPath())
 
 	if n != nil {
-		key := c.Method + "-" + n.pattern
-		c.Params = params
-		c.handlers = append(c.handlers, r.handlers[key])
+		key := c.GetMethod() + "-" + n.pattern
+		c.SetParams(params)
+		handles := c.Handlers()
+		*handles = append(*handles, r.handlers[key])
 	} else {
-		c.handlers = append(c.handlers, func(c *Context) {
-			c.String(http.StatusNotFound, "404 NOT FOUND: %s\n", c.Path)
+		handles := c.Handlers()
+		*handles = append(*handles, func(c Context) {
+			c.String(http.StatusNotFound, "404 NOT FOUND: %s\n", c.GetPath())
 		})
 	}
 	c.Next()

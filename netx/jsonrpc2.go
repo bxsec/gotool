@@ -3,6 +3,8 @@ package netx
 import (
 	"context"
 	"encoding/json"
+	"github.com/bxsec/gotool/codec"
+	"github.com/bxsec/gotool/server"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -35,7 +37,7 @@ func (s *XServer) jsonrpcHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn := r.Context().Value(HttpConnContextKey).(net.Conn)
 
-	ctx := share.WithValue(r.Context(), RemoteConnContextKey, conn)
+	ctx := server.WithValue(r.Context(), RemoteConnContextKey, conn)
 
 	if req.ID != nil {
 		res := s.handleJSONRPCRequest(ctx, req, r.Header)
@@ -62,7 +64,7 @@ func (s *XServer) handleJSONRPCRequest(ctx context.Context, r *jsonrpcRequest, h
 		req.SetOneway(true)
 	}
 	req.SetMessageType(protocol.Request)
-	req.SetSerializeType(protocol.JSON)
+	req.SetSerializeType(codec.JSON)
 
 	lastDot := strings.LastIndex(r.Method, ".")
 	if lastDot <= 0 {

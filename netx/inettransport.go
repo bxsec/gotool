@@ -7,7 +7,7 @@ import (
 
 type INetTransport interface {
 	SetServer(server IServer)
-	SetMessageAdapter(msgAdapter protocol.IMessage)
+	SetMessageAdapter(msgAdapter protocol.IRpcMessage)
 	Serve(network,address string) error
 	Shutdown() error
 	// Close immediately closes all active net.Listeners.

@@ -1,4 +1,4 @@
-package serialize
+package codec
 
 import (
 	"testing"
@@ -20,11 +20,11 @@ var group = ColorGroup{
 
 func BenchmarkJSONCodec_Encode(b *testing.B) {
 	var raw = make([]byte, 0, 1024)
-	serializer := JSONCodec{}
+	codec := JsonCodec{}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		raw, _ = serializer.Encode(group)
+		raw, _ = codec.Encode(group)
 	}
 	b.ReportMetric(float64(len(raw)), "bytes")
 }
@@ -73,13 +73,13 @@ func BenchmarkThriftCodec_Encode(b *testing.B) {
 }
 
 func BenchmarkJSONCodec_Decode(b *testing.B) {
-	serializer := JSONCodec{}
-	bytes, _ := serializer.Encode(group)
+	codec := JsonCodec{}
+	bytes, _ := codec.Encode(group)
 	result := ColorGroup{}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = serializer.Decode(bytes, &result)
+		_ = codec.Decode(bytes, &result)
 	}
 }
 

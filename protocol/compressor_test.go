@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"github.com/bxsec/gotool/protocol/testdata"
 	"reflect"
 	"testing"
 

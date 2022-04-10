@@ -24,19 +24,19 @@ type PluginContainer interface {
 	DoPostConnClose(connect.IConnect) bool
 
 	DoPreReadRequest(ctx context.Context) error
-	DoPostReadRequest(ctx context.Context, r *protocol.Message, e error) error
+	DoPostReadRequest(ctx context.Context, r *protocol.RpcMessage, e error) error
 
-	DoPreHandleRequest(ctx context.Context, req *protocol.Message) error
+	DoPreHandleRequest(ctx context.Context, req *protocol.RpcMessage) error
 	DoPreCall(ctx context.Context, serviceName, methodName string, args interface{}) (interface{}, error)
 	DoPostCall(ctx context.Context, serviceName, methodName string, args, reply interface{}) (interface{}, error)
 
-	DoPreWriteResponse(context.Context, *protocol.Message, *protocol.Message, error) error
-	DoPostWriteResponse(context.Context, *protocol.Message, *protocol.Message, error) error
+	DoPreWriteResponse(context.Context, *protocol.RpcMessage, *protocol.RpcMessage, error) error
+	DoPostWriteResponse(context.Context, *protocol.RpcMessage, *protocol.RpcMessage, error) error
 
 	DoPreWriteRequest(ctx context.Context) error
-	DoPostWriteRequest(ctx context.Context, r *protocol.Message, e error) error
+	DoPostWriteRequest(ctx context.Context, r *protocol.RpcMessage, e error) error
 
-	DoHeartbeatRequest(ctx context.Context, req *protocol.Message) error
+	DoHeartbeatRequest(ctx context.Context, req *protocol.RpcMessage) error
 
 	MuxMatch(m cmux.CMux)
 }
@@ -75,12 +75,12 @@ type (
 
 	// PostReadRequestPlugin represents .
 	PostReadRequestPlugin interface {
-		PostReadRequest(ctx context.Context, r *protocol.Message, e error) error
+		PostReadRequest(ctx context.Context, r *protocol.RpcMessage, e error) error
 	}
 
 	// PreHandleRequestPlugin represents .
 	PreHandleRequestPlugin interface {
-		PreHandleRequest(ctx context.Context, r *protocol.Message) error
+		PreHandleRequest(ctx context.Context, r *protocol.RpcMessage) error
 	}
 
 	PreCallPlugin interface {
@@ -93,12 +93,12 @@ type (
 
 	// PreWriteResponsePlugin represents .
 	PreWriteResponsePlugin interface {
-		PreWriteResponse(context.Context, *protocol.Message, *protocol.Message, error) error
+		PreWriteResponse(context.Context, *protocol.RpcMessage, *protocol.RpcMessage, error) error
 	}
 
 	// PostWriteResponsePlugin represents .
 	PostWriteResponsePlugin interface {
-		PostWriteResponse(context.Context, *protocol.Message, *protocol.Message, error) error
+		PostWriteResponse(context.Context, *protocol.RpcMessage, *protocol.RpcMessage, error) error
 	}
 
 	// PreWriteRequestPlugin represents .
@@ -108,12 +108,12 @@ type (
 
 	// PostWriteRequestPlugin represents .
 	PostWriteRequestPlugin interface {
-		PostWriteRequest(ctx context.Context, r *protocol.Message, e error) error
+		PostWriteRequest(ctx context.Context, r *protocol.RpcMessage, e error) error
 	}
 
 	// HeartbeatPlugin is .
 	HeartbeatPlugin interface {
-		HeartbeatRequest(ctx context.Context, req *protocol.Message) error
+		HeartbeatRequest(ctx context.Context, req *protocol.RpcMessage) error
 	}
 
 	CMuxPlugin interface {
@@ -249,7 +249,7 @@ func (p *pluginContainer) DoPreReadRequest(ctx context.Context) error {
 }
 
 // DoPostReadRequest invokes PostReadRequest plugin.
-func (p *pluginContainer) DoPostReadRequest(ctx context.Context, r *protocol.Message, e error) error {
+func (p *pluginContainer) DoPostReadRequest(ctx context.Context, r *protocol.RpcMessage, e error) error {
 	for i := range p.plugins {
 		if plugin, ok := p.plugins[i].(PostReadRequestPlugin); ok {
 			err := plugin.PostReadRequest(ctx, r, e)
@@ -263,7 +263,7 @@ func (p *pluginContainer) DoPostReadRequest(ctx context.Context, r *protocol.Mes
 }
 
 // DoPreHandleRequest invokes PreHandleRequest plugin.
-func (p *pluginContainer) DoPreHandleRequest(ctx context.Context, r *protocol.Message) error {
+func (p *pluginContainer) DoPreHandleRequest(ctx context.Context, r *protocol.RpcMessage) error {
 	for i := range p.plugins {
 		if plugin, ok := p.plugins[i].(PreHandleRequestPlugin); ok {
 			err := plugin.PreHandleRequest(ctx, r)
@@ -307,7 +307,7 @@ func (p *pluginContainer) DoPostCall(ctx context.Context, serviceName, methodNam
 }
 
 // DoPreWriteResponse invokes PreWriteResponse plugin.
-func (p *pluginContainer) DoPreWriteResponse(ctx context.Context, req *protocol.Message, res *protocol.Message, err error) error {
+func (p *pluginContainer) DoPreWriteResponse(ctx context.Context, req *protocol.RpcMessage, res *protocol.RpcMessage, err error) error {
 	for i := range p.plugins {
 		if plugin, ok := p.plugins[i].(PreWriteResponsePlugin); ok {
 			err := plugin.PreWriteResponse(ctx, req, res, err)
@@ -321,7 +321,7 @@ func (p *pluginContainer) DoPreWriteResponse(ctx context.Context, req *protocol.
 }
 
 // DoPostWriteResponse invokes PostWriteResponse plugin.
-func (p *pluginContainer) DoPostWriteResponse(ctx context.Context, req *protocol.Message, resp *protocol.Message, e error) error {
+func (p *pluginContainer) DoPostWriteResponse(ctx context.Context, req *protocol.RpcMessage, resp *protocol.RpcMessage, e error) error {
 	for i := range p.plugins {
 		if plugin, ok := p.plugins[i].(PostWriteResponsePlugin); ok {
 			err := plugin.PostWriteResponse(ctx, req, resp, e)
@@ -349,7 +349,7 @@ func (p *pluginContainer) DoPreWriteRequest(ctx context.Context) error {
 }
 
 // DoPostWriteRequest invokes PostWriteRequest plugin.
-func (p *pluginContainer) DoPostWriteRequest(ctx context.Context, r *protocol.Message, e error) error {
+func (p *pluginContainer) DoPostWriteRequest(ctx context.Context, r *protocol.RpcMessage, e error) error {
 	for i := range p.plugins {
 		if plugin, ok := p.plugins[i].(PostWriteRequestPlugin); ok {
 			err := plugin.PostWriteRequest(ctx, r, e)
@@ -363,7 +363,7 @@ func (p *pluginContainer) DoPostWriteRequest(ctx context.Context, r *protocol.Me
 }
 
 // DoHeartbeatRequest invokes HeartbeatRequest plugin.
-func (p *pluginContainer) DoHeartbeatRequest(ctx context.Context, r *protocol.Message) error {
+func (p *pluginContainer) DoHeartbeatRequest(ctx context.Context, r *protocol.RpcMessage) error {
 	for i := range p.plugins {
 		if plugin, ok := p.plugins[i].(HeartbeatPlugin); ok {
 			err := plugin.HeartbeatRequest(ctx, r)

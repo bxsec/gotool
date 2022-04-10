@@ -1,4 +1,4 @@
-package share
+package server
 
 import (
 	"log"
@@ -6,12 +6,12 @@ import (
 )
 
 func Logger() HandlerFunc {
-	return func(c *Context) {
+	return func(c Context) {
 		// Start timer
 		t := time.Now()
 		// Process request
 		c.Next()
 		// Calculate resolution time
-		log.Printf("[%d] %s in %v", c.StatusCode, c.Path, time.Since(t))
+		log.Printf("[%d] %s in %v", c.GetPath(), time.Since(t))
 	}
 }

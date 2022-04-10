@@ -46,7 +46,7 @@ type TcpTransport struct {
 	doneChan chan struct{}
 
 	server IServer
-	msgAdapter protocol.IMessage
+	msgAdapter protocol.IRpcMessage
 
 	transportServer gnet.Server
 
@@ -136,7 +136,7 @@ func (s *TcpTransport) SetServer(server IServer) {
 	s.server = server
 }
 
-func (s *TcpTransport) SetMessageAdapter(msgAdapter protocol.IMessage) {
+func (s *TcpTransport) SetMessageAdapter(msgAdapter protocol.IRpcMessage) {
 	s.msgAdapter = msgAdapter
 }
 
@@ -170,7 +170,7 @@ func (s *TcpTransport) Address() net.Addr {
 // custom protocol header contains Version, ActionType and DataLength fields
 // its payload is Data field
 type CustomLengthFieldProtocol struct {
-	MsgAdapter protocol.IMessage
+	MsgAdapter protocol.IRpcMessage
 }
 
 // Encode ... 将Conn中的Context和buf编码成将要传输的格式

@@ -1,8 +1,9 @@
 package share
 
 import (
-	"context"
+	"github.com/bxsec/gotool/server"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/net/context"
 
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -39,8 +40,8 @@ func Inject(ctx context.Context, propagators propagation.TextMapPropagator) {
 	meta := ctx.Value(ReqMetaDataKey)
 	if meta == nil {
 		meta = make(map[string]string)
-		if rpcxContext, ok := ctx.(*Context); ok {
-			rpcxContext.SetValue(ReqMetaDataKey, meta)
+		if rpcxContext, ok := ctx.(server.Context); ok {
+			rpcxContext.Value(ReqMetaDataKey)
 		}
 	}
 
@@ -53,7 +54,7 @@ func Extract(ctx context.Context, propagators propagation.TextMapPropagator) tra
 	meta := ctx.Value(ReqMetaDataKey)
 	if meta == nil {
 		meta = make(map[string]string)
-		if rpcxContext, ok := ctx.(*Context); ok {
+		if rpcxContext, ok := ctx.(server.Context); ok {
 			rpcxContext.SetValue(ReqMetaDataKey, meta)
 		}
 	}
