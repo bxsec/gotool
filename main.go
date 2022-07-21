@@ -1,11 +1,9 @@
 package main
 
 import (
-	"github.com/bxsec/gotool/netx"
+	"fmt"
 )
 
 func main() {
-	server := netx.NewServer()
-	server.Serve("tcp", "localhost:8972")
+	fmt.Println("12")
 }
-

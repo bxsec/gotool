@@ -7,19 +7,19 @@ var msgPool = sync.Pool{
 		header := Header([12]byte{})
 		header[0] = magicNumber
 
-		return &RpcMessage{
+		return &Message{
 			Header: &header,
 		}
 	},
 }
 
 // GetPooledMsg gets a pooled message.
-func GetPooledMsg() *RpcMessage {
-	return msgPool.Get().(*RpcMessage)
+func GetPooledMsg() *Message {
+	return msgPool.Get().(*Message)
 }
 
 // FreeMsg puts a msg into the pool.
-func FreeMsg(msg *RpcMessage) {
+func FreeMsg(msg *Message) {
 	if msg != nil && cap(msg.data) < 1024 {
 		msg.Reset()
 		msgPool.Put(msg)
